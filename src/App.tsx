@@ -30,7 +30,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'overview' | 'monitor' | 'vision' | 'incidents' | 'settings'>('overview');
   const [sensors, setSensors] = useState<SensorReading[]>(initialSensors);
   const [systemState, setSystemState] = useState<SystemSafetyState>('NOMINAL');
-  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('CONNECTED');
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('DISCONNECTED');
   const [incidents, setIncidents] = useState<IncidentRecord[]>(initialIncidents);
   const [detections, setDetections] = useState<AiDetection[]>(initialDetections);
   const [config, setConfig] = useState<DeviceConfig>(initialDeviceConfig);
@@ -59,8 +59,10 @@ export default function App() {
           setSensors((prev) => {
             return incomingSensors.map((newSensor) => {
               const existing = prev.find((s) => s.id === newSensor.id);
-              const prevHistory = existing ? existing.history : [];
-              const updatedHistory = [...prevHistory.slice(-7), newSensor.value];
+              const prevHistory = existing ? existing.history.filter((v): v is number => v !== null) : [];
+              const updatedHistory = newSensor.value !== null 
+                ? [...prevHistory.slice(-7), newSensor.value]
+                : prevHistory;
 
               return {
                 ...newSensor,
@@ -212,10 +214,14 @@ export default function App() {
 
   // Test FCM Push Registration
   const handleTestFcmPush = async (): Promise<boolean> => {
+    if (!config.fcmToken) {
+      console.warn('FCM token is not configured in web prototype.');
+      return false;
+    }
     if (clientRef.current) {
       return await clientRef.current.registerFcmToken({
         device_id: config.deviceId,
-        fcm_token: config.fcmToken || 'fcm_token_device_live_38df9a2c_prod',
+        fcm_token: config.fcmToken,
         platform: 'android',
         app_version: '2.4.1',
         registered_at: new Date().toISOString()

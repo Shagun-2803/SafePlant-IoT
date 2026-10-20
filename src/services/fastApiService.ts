@@ -385,7 +385,7 @@ export class FastApiNetworkClient {
 
     const pressVal = parseSensorVal(payload.pressure_bar ?? payload.pressure);
     const vibVal = parseSensorVal(payload.vibration_index ?? payload.vibration);
-    const rssi = parseSensorVal(payload.rssi_dbm ?? payload.rssi) ?? -58;
+    const rssi = parseSensorVal(payload.rssi_dbm ?? payload.rssi) ?? 0;
 
     // Check for critical emergency hazard thresholds
     if (gasVal !== null && gasVal >= 500) {

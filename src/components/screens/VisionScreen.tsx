@@ -35,14 +35,24 @@ export const VisionScreen: React.FC<VisionScreenProps> = ({
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [permissionError, setPermissionError] = useState<string | null>(null);
   
-  // Real or simulated tracked person position (% coordinates)
-  const [trackedPerson, setTrackedPerson] = useState<{ x: number; y: number; w: number; h: number; confidence: number } | null>({
-    x: 42,
-    y: 35,
-    w: 22,
-    h: 46,
-    confidence: 0.94
-  });
+  // Real tracked person position (% coordinates) from live computer vision
+  const [trackedPerson, setTrackedPerson] = useState<{ x: number; y: number; w: number; h: number; confidence: number } | null>(null);
+
+  // Sync tracked person with backend AI detections when available
+  useEffect(() => {
+    if (detections && detections.length > 0) {
+      const latest = detections[0];
+      if (latest.box) {
+        setTrackedPerson({
+          x: latest.box.x,
+          y: latest.box.y,
+          w: latest.box.w,
+          h: latest.box.h,
+          confidence: latest.confidence
+        });
+      }
+    }
+  }, [detections]);
 
   const [isZoneBreached, setIsZoneBreached] = useState(false);
   const [cooldownRemaining, setCooldownRemaining] = useState(0);

@@ -54,39 +54,80 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
   const recentIncidents = incidents.slice(0, 3);
 
-  // Status focal styling
-  const stateConfig = {
-    NOMINAL: {
-      label: 'ALL SYSTEMS NOMINAL',
-      sub: '4/4 telemetry channels verified within safety envelope',
-      bg: 'bg-[#10E575]/10',
-      border: 'border-[#10E575]/40',
-      text: 'text-[#10E575]',
-      glow: 'shadow-[0_0_24px_rgba(16,229,117,0.15)]',
-      icon: ShieldCheck,
-      badge: 'SECURE'
-    },
-    WARNING: {
-      label: 'SYSTEM WARNING DETECTED',
-      sub: 'Combustible gas threshold exceeded baseline in Zone B-2',
-      bg: 'bg-amber-500/10',
-      border: 'border-amber-500/40',
-      text: 'text-amber-400',
-      glow: 'shadow-[0_0_24px_rgba(245,158,11,0.2)]',
-      icon: AlertTriangle,
-      badge: 'ATTENTION'
-    },
-    CRITICAL: {
-      label: 'CRITICAL HAZARD DETECTED',
-      sub: 'Active flame confirmation or extreme thermal spike',
-      bg: 'bg-red-500/15',
-      border: 'border-red-500/60',
-      text: 'text-red-400',
-      glow: 'shadow-[0_0_30px_rgba(239,68,68,0.3)]',
-      icon: ShieldAlert,
-      badge: 'HAZARD CONFIRMED'
+  const activeChannelsCount = sensors.filter((s) => s.value !== null).length;
+
+  // Status focal styling driven by live connectivity and hardware telemetry
+  const stateConfig = (() => {
+    if (connectionStatus === 'DISCONNECTED') {
+      return {
+        label: 'FASTAPI DISCONNECTED',
+        sub: 'No telemetry ingress from backend. Node hardware offline.',
+        bg: 'bg-slate-800/40',
+        border: 'border-white/10',
+        text: 'text-slate-400',
+        glow: '',
+        icon: AlertTriangle,
+        badge: 'OFFLINE'
+      };
     }
-  }[systemState];
+    if (connectionStatus === 'STALE_DATA') {
+      return {
+        label: 'STALE TELEMETRY STREAM',
+        sub: 'FastAPI stream heartbeat timeout (>5000ms). Ingress paused.',
+        bg: 'bg-orange-500/10',
+        border: 'border-orange-500/40',
+        text: 'text-orange-400',
+        glow: 'shadow-[0_0_24px_rgba(249,115,22,0.15)]',
+        icon: AlertTriangle,
+        badge: 'STALE'
+      };
+    }
+    if (connectionStatus === 'RECONNECTING' || connectionStatus === 'CONNECTING') {
+      return {
+        label: 'ESTABLISHING CONNECTION',
+        sub: connectionStatus === 'RECONNECTING' ? 'Reconnecting to FastAPI with exponential backoff...' : 'Connecting to FastAPI WebSocket (/ws)...',
+        bg: 'bg-amber-500/10',
+        border: 'border-amber-500/30',
+        text: 'text-amber-400',
+        glow: '',
+        icon: AlertTriangle,
+        badge: 'CONNECTING'
+      };
+    }
+
+    return {
+      NOMINAL: {
+        label: 'ALL SYSTEMS NOMINAL',
+        sub: `${activeChannelsCount}/${sensors.length} telemetry channels verified within safety envelope`,
+        bg: 'bg-[#10E575]/10',
+        border: 'border-[#10E575]/40',
+        text: 'text-[#10E575]',
+        glow: 'shadow-[0_0_24px_rgba(16,229,117,0.15)]',
+        icon: ShieldCheck,
+        badge: 'SECURE'
+      },
+      WARNING: {
+        label: 'SYSTEM WARNING DETECTED',
+        sub: 'Combustible gas threshold exceeded baseline in Zone B-2',
+        bg: 'bg-amber-500/10',
+        border: 'border-amber-500/40',
+        text: 'text-amber-400',
+        glow: 'shadow-[0_0_24px_rgba(245,158,11,0.2)]',
+        icon: AlertTriangle,
+        badge: 'ATTENTION'
+      },
+      CRITICAL: {
+        label: 'CRITICAL HAZARD DETECTED',
+        sub: 'Active flame confirmation or extreme thermal spike',
+        bg: 'bg-red-500/15',
+        border: 'border-red-500/60',
+        text: 'text-red-400',
+        glow: 'shadow-[0_0_30px_rgba(239,68,68,0.3)]',
+        icon: ShieldAlert,
+        badge: 'HAZARD CONFIRMED'
+      }
+    }[systemState];
+  })();
 
   const StateIcon = stateConfig.icon;
 
@@ -122,7 +163,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           </div>
           <span className="text-slate-600">|</span>
           <span className="text-[9.5px] sm:text-[10px] font-mono text-slate-400">
-            {tempReading.deviceTimestamp ? tempReading.deviceTimestamp.substring(11, 19) : '14ms'}
+            {tempReading.deviceTimestamp ? tempReading.deviceTimestamp.substring(11, 19) : '--:--:--'}
           </span>
         </div>
       </header>
@@ -152,8 +193,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             </div>
 
             <div className="flex items-center gap-1.5 bg-[#0B0E12]/80 backdrop-blur-md px-2 sm:px-2.5 py-1 rounded-lg border border-white/10 text-slate-300 shrink-0">
-              <span className="text-[#10E575]">TWIN:</span>
-              <span className="font-semibold text-white">SYNCED</span>
+              <span className={connectionStatus === 'CONNECTED' ? "text-[#10E575]" : "text-slate-500"}>TWIN:</span>
+              <span className="font-semibold text-white">{connectionStatus === 'CONNECTED' ? 'SYNCED' : 'OFFLINE'}</span>
             </div>
           </div>
 
@@ -165,9 +206,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               </span>
               <div className="flex items-baseline gap-1.5">
                 <span className="text-2xl sm:text-3xl font-extrabold font-mono text-white tracking-tight tabular-nums">
-                  {systemState === 'CRITICAL' ? '71.2' : systemState === 'WARNING' ? '88.5' : '99.4'}%
+                  {connectionStatus !== 'CONNECTED' || tempReading.value === null
+                    ? '--.-%'
+                    : systemState === 'CRITICAL'
+                    ? '71.2%'
+                    : systemState === 'WARNING'
+                    ? '88.5%'
+                    : '99.4%'}
                 </span>
-                <span className="text-[10px] sm:text-xs text-slate-300 font-mono hidden min-[360px]:inline">Telemetry OK</span>
+                <span className="text-[10px] sm:text-xs text-slate-300 font-mono hidden min-[360px]:inline">
+                  {connectionStatus === 'CONNECTED' && tempReading.value !== null ? 'Telemetry OK' : connectionStatus === 'STALE_DATA' ? 'Stale Stream' : 'No Signal'}
+                </span>
               </div>
             </div>
 
@@ -254,45 +303,55 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         </div>
 
         <div className="flex flex-col gap-2">
-          {recentIncidents.map((inc) => {
-            const isCrit = inc.severity === 'critical';
-            const isWarn = inc.severity === 'medium';
-            const badgeColor = isCrit ? 'text-red-400' : isWarn ? 'text-amber-400' : 'text-[#10E575]';
+          {recentIncidents.length === 0 ? (
+            <div className="p-4 rounded-xl bg-[#11161F] border border-white/5 text-center flex flex-col items-center justify-center gap-1.5 py-6">
+              <CheckCircle2 className="w-5 h-5 text-slate-500 opacity-60" />
+              <span className="text-xs font-semibold text-slate-300">No Incidents Logged</span>
+              <span className="text-[10px] sm:text-[11px] text-slate-500 font-mono">
+                {connectionStatus === 'CONNECTED' ? 'Zero safety discrepancies reported by backend' : 'Awaiting live incident telemetry from FastAPI'}
+              </span>
+            </div>
+          ) : (
+            recentIncidents.map((inc) => {
+              const isCrit = inc.severity === 'critical';
+              const isWarn = inc.severity === 'medium';
+              const badgeColor = isCrit ? 'text-red-400' : isWarn ? 'text-amber-400' : 'text-[#10E575]';
 
-            return (
-              <div
-                key={inc.id}
-                className="p-3 rounded-xl bg-[#11161F] border border-white/5 hover:border-white/10 transition-colors flex items-start justify-between gap-2.5 min-w-0"
-              >
-                <div className="flex flex-col gap-1 min-w-0 flex-1">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className={`text-[9.5px] sm:text-[10px] font-mono font-bold uppercase shrink-0 ${badgeColor}`}>
-                      {inc.severity}
-                    </span>
-                    <span className="text-slate-600 text-xs">·</span>
-                    <span className="text-xs font-semibold text-white truncate flex-1 min-w-0">
-                      {inc.title}
-                    </span>
+              return (
+                <div
+                  key={inc.id}
+                  className="p-3 rounded-xl bg-[#11161F] border border-white/5 hover:border-white/10 transition-colors flex items-start justify-between gap-2.5 min-w-0"
+                >
+                  <div className="flex flex-col gap-1 min-w-0 flex-1">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className={`text-[9.5px] sm:text-[10px] font-mono font-bold uppercase shrink-0 ${badgeColor}`}>
+                        {inc.severity}
+                      </span>
+                      <span className="text-slate-600 text-xs">·</span>
+                      <span className="text-xs font-semibold text-white truncate flex-1 min-w-0">
+                        {inc.title}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 line-clamp-1">
+                      {inc.description}
+                    </p>
+                    <div className="flex items-center gap-2 text-[10px] font-mono text-slate-500 mt-0.5">
+                      <span className="truncate">{inc.zone}</span>
+                      <span>·</span>
+                      <span className="shrink-0">{inc.timestamp}</span>
+                    </div>
                   </div>
-                  <p className="text-[11px] text-slate-400 line-clamp-1">
-                    {inc.description}
-                  </p>
-                  <div className="flex items-center gap-2 text-[10px] font-mono text-slate-500 mt-0.5">
-                    <span className="truncate">{inc.zone}</span>
-                    <span>·</span>
-                    <span className="shrink-0">{inc.timestamp}</span>
-                  </div>
+
+                  {inc.resolved && (
+                    <div className="flex items-center gap-1 text-[9.5px] sm:text-[10px] font-mono text-[#10E575] bg-[#10E575]/10 px-2 py-0.5 rounded shrink-0">
+                      <CheckCircle2 className="w-3 h-3" />
+                      <span>Logged</span>
+                    </div>
+                  )}
                 </div>
-
-                {inc.resolved && (
-                  <div className="flex items-center gap-1 text-[9.5px] sm:text-[10px] font-mono text-[#10E575] bg-[#10E575]/10 px-2 py-0.5 rounded shrink-0">
-                    <CheckCircle2 className="w-3 h-3" />
-                    <span>Logged</span>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </div>
       </section>
     </div>

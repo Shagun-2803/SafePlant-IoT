@@ -139,20 +139,20 @@ export const HumiditySparkChart: React.FC<HumiditySparkProps> = ({ reading }) =>
 
   // SVG Sparkline path from history, filtering out nulls
   const validHistory = (reading.history || []).filter((v): v is number => v !== null && v !== undefined);
-  const history = validHistory.length > 0 ? validHistory : [48, 49, 48.5, 48.2];
-  const min = Math.min(...history) - 2;
-  const max = Math.max(...history) + 2;
+  const hasHistory = !isUnknown && validHistory.length >= 2;
+  const min = hasHistory ? Math.min(...validHistory) - 2 : 0;
+  const max = hasHistory ? Math.max(...validHistory) + 2 : 100;
   const range = max - min || 1;
 
   const width = 140;
   const height = 44;
-  const points = history.map((val, idx) => {
-    const x = (idx / (history.length - 1)) * width;
+  const points = hasHistory ? validHistory.map((val, idx) => {
+    const x = (idx / (validHistory.length - 1)) * width;
     const y = height - ((val - min) / range) * (height - 8) - 4;
     return `${x},${y}`;
-  }).join(' ');
+  }).join(' ') : '';
 
-  const areaPath = `M 0,${height} L ${points} L ${width},${height} Z`;
+  const areaPath = hasHistory ? `M 0,${height} L ${points} L ${width},${height} Z` : '';
 
   return (
     <div className="relative p-3 min-[400px]:p-4 rounded-2xl bg-[#12161D] border border-white/5 hover:border-white/10 transition-colors flex flex-col justify-between overflow-hidden">
@@ -188,7 +188,7 @@ export const HumiditySparkChart: React.FC<HumiditySparkProps> = ({ reading }) =>
 
       {/* Sparkline Canvas */}
       <div className="w-full h-10 sm:h-11 relative my-1">
-        {!isUnknown ? (
+        {hasHistory ? (
           <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full overflow-visible" preserveAspectRatio="none">
             <defs>
               <linearGradient id="humGrad" x1="0" y1="0" x2="0" y2="1">
@@ -221,7 +221,7 @@ export const HumiditySparkChart: React.FC<HumiditySparkProps> = ({ reading }) =>
 
       <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[10px] sm:text-[11px] text-slate-400">
         <span className="font-mono text-[9px] sm:text-[10px] text-slate-400 truncate">
-          {isUnknown ? 'Unregistered' : 'Dew Pt: 13.2°C'}
+          {isUnknown ? 'Awaiting Data' : 'Humidity Sensor Online'}
         </span>
         <span className="font-medium text-sky-400 shrink-0">
           {isUnknown ? 'UNKNOWN' : 'Stable'}
@@ -372,7 +372,7 @@ export const FlameOpticalDetector: React.FC<FlameDetectorProps> = ({ reading }) 
 
       <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[10px] sm:text-[11px] text-slate-400">
         <span className="font-mono text-[9px] sm:text-[10px] text-slate-400 truncate">
-          {reading.deviceTimestamp ? `TS: ${reading.deviceTimestamp.substring(11, 19)}` : '<20ms Response'}
+          {reading.deviceTimestamp ? `TS: ${reading.deviceTimestamp.substring(11, 19)}` : isUnknown ? 'Awaiting Packet' : 'Live Optic'}
         </span>
         <span className={`font-medium shrink-0 ${
           isUnknown ? 'text-slate-400' : isFlameDetected ? 'text-[#EF4444]' : 'text-[#10E575]'

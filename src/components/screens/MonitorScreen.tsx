@@ -52,8 +52,8 @@ export const MonitorScreen: React.FC<MonitorScreenProps> = ({
 
         {/* State Filter Pills / Buttons */}
         <div className="flex items-center gap-1 bg-[#12161D] p-1 rounded-xl border border-white/5 text-[10px] sm:text-[11px] font-mono shrink-0">
-          <span className="w-2 h-2 rounded-full bg-[#10E575]" />
-          <span className="text-slate-300 pr-1">{sensors.length} Channels</span>
+          <span className={`w-2 h-2 rounded-full ${sensors.some(s => s.value !== null) ? 'bg-[#10E575]' : 'bg-slate-500'}`} />
+          <span className="text-slate-300 pr-1">{sensors.filter(s => s.value !== null).length}/{sensors.length} Active</span>
         </div>
       </div>
 
@@ -89,9 +89,10 @@ export const MonitorScreen: React.FC<MonitorScreenProps> = ({
               {connectionStatus}
             </span>
             <span className="text-[11px] text-slate-300 line-clamp-2">
-              {connectionStatus === 'STALE_DATA' && 'ESP32 heartbeat delay > 5000ms. Showing cached readings.'}
-              {connectionStatus === 'DISCONNECTED' && 'Hardware node offline. Check WiFi SSID and 5V power supply.'}
-              {connectionStatus === 'CONNECTING' && 'Negotiating MQTT handshake on safeplant/node_01...'}
+              {connectionStatus === 'STALE_DATA' && 'FastAPI stream heartbeat timeout > 5000ms. Ingress paused.'}
+              {connectionStatus === 'DISCONNECTED' && 'Hardware node or FastAPI backend offline. Check server status and network.'}
+              {connectionStatus === 'CONNECTING' && 'Connecting to FastAPI WebSocket (/ws)...'}
+              {connectionStatus === 'RECONNECTING' && 'Attempting automatic WebSocket reconnection...'}
             </span>
           </div>
         </div>
@@ -107,7 +108,7 @@ export const MonitorScreen: React.FC<MonitorScreenProps> = ({
                   {activeSensor.hardwarePin}
                 </span>
                 <span className={`text-[10px] font-mono font-bold uppercase ${
-                  activeSensor.status === 'critical' ? 'text-red-400' : activeSensor.status === 'warning' ? 'text-amber-400' : 'text-[#10E575]'
+                  activeSensor.status === 'critical' ? 'text-red-400' : activeSensor.status === 'warning' ? 'text-amber-400' : activeSensor.status === 'unknown' ? 'text-slate-400' : 'text-[#10E575]'
                 }`}>
                   {activeSensor.status}
                 </span>
@@ -133,10 +134,10 @@ export const MonitorScreen: React.FC<MonitorScreenProps> = ({
               <span className="text-[9.5px] sm:text-[10px] font-mono text-slate-500 block">
                 {activeSensor.deviceTimestamp 
                   ? `Device: ${activeSensor.deviceTimestamp.substring(11, 19)} · RSSI: ${activeSensor.signalDbm} dBm`
-                  : `RSSI: ${activeSensor.signalDbm} dBm · ${activeSensor.lastUpdated}`}
+                  : activeSensor.value === null ? 'No packet received · Offline' : `RSSI: ${activeSensor.signalDbm} dBm · ${activeSensor.lastUpdated}`}
               </span>
-              <span className={`text-[9px] font-mono uppercase ${activeSensor.source === 'esp32' ? 'text-[#10E575]' : 'text-slate-400'}`}>
-                Source: {activeSensor.source === 'esp32' ? 'ESP32 Wi-Fi Telemetry' : 'Simulation'}
+              <span className={`text-[9px] font-mono uppercase ${activeSensor.value !== null && activeSensor.source === 'esp32' ? 'text-[#10E575]' : 'text-slate-400'}`}>
+                Source: {activeSensor.value === null ? 'Awaiting Telemetry' : activeSensor.source === 'esp32' ? 'ESP32 Wi-Fi Telemetry' : 'External Ingress'}
               </span>
             </div>
           </div>
