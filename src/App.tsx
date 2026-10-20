@@ -1,18 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   SensorReading, 
   SystemSafetyState, 
-  OperatingMode, 
   ConnectionStatus, 
   IncidentRecord, 
   AiDetection, 
-  DeviceConfig 
+  DeviceConfig,
+  EmergencyAlert,
+  RestrictedZoneBoundary
 } from './types/safeplant';
 import { 
   initialSensors, 
   initialDetections, 
   initialIncidents, 
-  initialDeviceConfig 
+  initialDeviceConfig,
+  defaultRestrictedZone 
 } from './data/mockData';
 import { AndroidFrame } from './components/AndroidFrame';
 import { HomeScreen } from './components/screens/HomeScreen';
@@ -21,12 +23,13 @@ import { VisionScreen } from './components/screens/VisionScreen';
 import { IncidentsScreen } from './components/screens/IncidentsScreen';
 import { SettingsScreen } from './components/screens/SettingsScreen';
 import { ComposeCodeModal } from './components/ComposeCodeModal';
+import { EmergencyAlertOverlay } from './components/EmergencyAlertOverlay';
+import { FastApiNetworkClient } from './services/fastApiService';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'overview' | 'monitor' | 'vision' | 'incidents' | 'settings'>('overview');
   const [sensors, setSensors] = useState<SensorReading[]>(initialSensors);
   const [systemState, setSystemState] = useState<SystemSafetyState>('NOMINAL');
-  const [operatingMode, setOperatingMode] = useState<OperatingMode>('DEMO');
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('CONNECTED');
   const [incidents, setIncidents] = useState<IncidentRecord[]>(initialIncidents);
   const [detections, setDetections] = useState<AiDetection[]>(initialDetections);
@@ -34,133 +37,132 @@ export default function App() {
   const [tempUnit, setTempUnit] = useState<'C' | 'F'>('C');
   const [isCodeModalOpen, setIsCodeModalOpen] = useState(false);
 
-  // Subtle realistic telemetry drift in Demo mode
+  // Active in-app emergency alert dialog
+  const [activeEmergencyAlert, setActiveEmergencyAlert] = useState<EmergencyAlert | null>(null);
+
+  // Restricted zone configuration for Phone Camera Computer Vision
+  const [restrictedZone, setRestrictedZone] = useState<RestrictedZoneBoundary>(defaultRestrictedZone);
+
+  // Last successful telemetry timestamp
+  const [lastTelemetryTimestamp, setLastTelemetryTimestamp] = useState<string | null>(null);
+
+  const clientRef = useRef<FastApiNetworkClient | null>(null);
+
+  // Initialize FastAPI Network Client
   useEffect(() => {
-    if (operatingMode !== 'DEMO' || connectionStatus !== 'CONNECTED') return;
+    const client = new FastApiNetworkClient(
+      config.fastApiUrl,
+      {
+        onTelemetryUpdate: (incomingSensors, deviceTimestamp, source) => {
+          setLastTelemetryTimestamp(deviceTimestamp || new Date().toISOString());
 
-    const interval = setInterval(() => {
-      setSensors((prev) =>
-        prev.map((sensor) => {
-          // If sensor is in simulated alarm state, preserve it
-          if (sensor.status === 'critical' || sensor.status === 'warning') return sensor;
+          setSensors((prev) => {
+            return incomingSensors.map((newSensor) => {
+              const existing = prev.find((s) => s.id === newSensor.id);
+              const prevHistory = existing ? existing.history : [];
+              const updatedHistory = [...prevHistory.slice(-7), newSensor.value];
 
-          let delta = (Math.random() - 0.5) * 0.2;
-          let newVal = sensor.value;
+              return {
+                ...newSensor,
+                history: updatedHistory,
+                deviceTimestamp: deviceTimestamp || existing?.deviceTimestamp,
+                source: source || existing?.source
+              };
+            });
+          });
 
-          if (sensor.category === 'temperature') {
-            newVal = Math.round((sensor.value + delta) * 10) / 10;
-            newVal = Math.max(23.5, Math.min(26.0, newVal));
-          } else if (sensor.category === 'humidity') {
-            newVal = Math.round((sensor.value + delta * 2) * 10) / 10;
-            newVal = Math.max(46.0, Math.min(50.5, newVal));
-          } else if (sensor.category === 'gas') {
-            newVal = Math.round(sensor.value + (Math.random() - 0.5) * 2);
-            newVal = Math.max(34, Math.min(42, newVal));
-          }
+          // Derive overall safety state from actual readings
+          const hasCrit = incomingSensors.some((s) => s.status === 'critical');
+          const hasWarn = incomingSensors.some((s) => s.status === 'warning');
+          setSystemState(hasCrit ? 'CRITICAL' : hasWarn ? 'WARNING' : 'NOMINAL');
+        },
+        onConnectionStatusChange: (status, message) => {
+          setConnectionStatus(status);
+        },
+        onIncidentsUpdate: (updatedIncidents) => {
+          setIncidents(updatedIncidents);
+        },
+        onAiEventsUpdate: (events) => {
+          setDetections(events);
+        },
+        onEmergencyAlert: (alert) => {
+          setActiveEmergencyAlert(alert);
+        }
+      }
+    );
 
-          const newHistory = [...sensor.history.slice(1), newVal];
-          return {
-            ...sensor,
-            value: newVal,
-            history: newHistory,
-            lastUpdated: 'Just now'
-          };
-        })
-      );
-    }, 3000);
+    clientRef.current = client;
+    client.start();
 
-    return () => clearInterval(interval);
-  }, [operatingMode, connectionStatus]);
+    return () => {
+      client.stop();
+    };
+  }, []);
 
-  // Hazard Simulation Handler
-  const handleSimulateHazard = (type: 'gas' | 'flame' | 'temp' | 'reset') => {
-    if (type === 'reset') {
-      setSensors(initialSensors);
-      setSystemState('NOMINAL');
-      return;
-    }
+  // Update backend base URL
+  const handleUpdateConfig = (updated: Partial<DeviceConfig>) => {
+    setConfig((prev) => {
+      const next = { ...prev, ...updated };
+      if (updated.fastApiUrl && clientRef.current) {
+        clientRef.current.setBaseUrl(updated.fastApiUrl);
+      }
+      return next;
+    });
+  };
 
-    if (type === 'gas') {
-      setSensors((prev) =>
-        prev.map((s) =>
-          s.category === 'gas'
-            ? {
-                ...s,
-                value: 320,
-                status: 'warning',
-                history: [...s.history.slice(1), 320],
-                lastUpdated: 'Just now'
-              }
-            : s
-        )
-      );
-      setSystemState('WARNING');
-
-      // Add audit incident
-      const newInc: IncidentRecord = {
-        id: `inc_${Date.now()}`,
-        timestamp: 'Just now',
-        title: 'Elevated Hydrocarbon Vapor Detected',
-        description: 'Vapor reading reached 320 PPM in Zone B-2, exceeding warning threshold (250 PPM). Auxiliary ventilation triggered.',
-        zone: 'Zone B-2 · Solvents Bay',
-        severity: 'medium',
-        sensorTrigger: 'MQ-2 Gas Sensor (ADC1_CH0)',
-        peakValue: '320 PPM',
-        acknowledged: false,
-        resolved: false
-      };
-      setIncidents((prev) => [newInc, ...prev]);
-    } else if (type === 'flame') {
-      setSensors((prev) =>
-        prev.map((s) =>
-          s.category === 'flame'
-            ? {
-                ...s,
-                value: 1,
-                status: 'critical',
-                lastUpdated: 'Just now'
-              }
-            : s
-        )
-      );
-      setSystemState('CRITICAL');
-
-      // Add critical incident
-      const newInc: IncidentRecord = {
-        id: `inc_${Date.now()}`,
-        timestamp: 'Just now',
-        title: 'CRITICAL: UV/IR Optical Flame Triggered',
-        description: 'Dual-band infrared flicker detected on Pin 15. Automated foam suppression pre-charge armed.',
-        zone: 'Refinery Tower A-4',
-        severity: 'critical',
-        sensorTrigger: 'KY-026 Flame Sensor (GPIO 15)',
-        peakValue: 'FLAME CONFIRMED',
-        acknowledged: false,
-        resolved: false
-      };
-      setIncidents((prev) => [newInc, ...prev]);
-    } else if (type === 'temp') {
-      setSensors((prev) =>
-        prev.map((s) =>
-          s.category === 'temperature'
-            ? {
-                ...s,
-                value: 64.5,
-                status: 'critical',
-                history: [...s.history.slice(1), 64.5],
-                lastUpdated: 'Just now'
-              }
-            : s
-        )
-      );
-      setSystemState('CRITICAL');
+  const handleReconnect = () => {
+    if (clientRef.current) {
+      clientRef.current.reconnect();
     }
   };
 
-  const handleToggleMode = () => {
-    const nextMode = operatingMode === 'DEMO' ? 'HARDWARE' : 'DEMO';
-    setOperatingMode(nextMode);
-    setConfig((c) => ({ ...c, mode: nextMode }));
+  const handleTestConnection = async () => {
+    if (clientRef.current) {
+      return await clientRef.current.testConnection();
+    }
+    return { ok: false, latencyMs: 0, error: 'Network client uninitialized' };
+  };
+
+  // Test Emergency Alert Trigger
+  const handleTriggerTestEmergencyAlert = () => {
+    setActiveEmergencyAlert({
+      id: `alert_test_${Date.now()}`,
+      incidentId: 'inc_392',
+      title: 'CRITICAL: Combustible Gas Explosion Hazard',
+      severity: 'CRITICAL',
+      message: 'Combustible hydrocarbon vapor concentration exceeded 500 PPM threshold in Solvents Bay. Immediate ventilation extraction required.',
+      sensorSource: 'MQ-2 Gas Sensor (ADC1_CH0)',
+      actualMetric: '520 PPM (Ceiling 500 PPM)',
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      zone: 'Zone B-2 · Solvents Bay',
+      safetyInstructions: [
+        'Evacuate personnel from designated hazardous perimeter.',
+        'Activate emergency extraction exhaust scrubbers.',
+        'Isolate primary solvent transfer line at Valve 4.'
+      ],
+      acknowledged: false
+    });
+  };
+
+  const handleAcknowledgeAlert = (alertId: string) => {
+    setActiveEmergencyAlert(null);
+    // Also mark incident acknowledged if matched
+    setIncidents((prev) =>
+      prev.map((inc) =>
+        inc.id === alertId || activeEmergencyAlert?.incidentId === inc.id
+          ? {
+              ...inc,
+              acknowledged: true,
+              acknowledgedBy: 'Lead Safety Officer (Acknowledged via In-App Alert)'
+            }
+          : inc
+      )
+    );
+  };
+
+  const handleViewIncidentDetails = (incidentId: string) => {
+    setActiveEmergencyAlert(null);
+    setActiveTab('incidents');
   };
 
   const handleAcknowledgeIncident = (id: string) => {
@@ -171,32 +173,77 @@ export default function App() {
               ...inc,
               acknowledged: true,
               resolved: true,
-              acknowledgedBy: 'Lead Safety Officer (Shift 1)'
+              acknowledgedBy: 'Lead Safety Officer'
             }
           : inc
       )
     );
   };
 
-  const handleTestConnection = async (): Promise<boolean> => {
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    return true;
+  // Dispatch Vision Incident to FastAPI
+  const handleSubmitVisionIncident = async (incident: Partial<IncidentRecord>): Promise<boolean> => {
+    if (clientRef.current) {
+      const ok = await clientRef.current.submitIncident(incident);
+      if (ok && incident.title) {
+        setIncidents((prev) => [incident as IncidentRecord, ...prev]);
+        // Trigger emergency alert dialog for perimeter entry
+        setActiveEmergencyAlert({
+          id: incident.id || `vis_alert_${Date.now()}`,
+          incidentId: incident.id || `inc_${Date.now()}`,
+          title: 'Restricted Safety Zone Breach',
+          severity: 'WARNING',
+          message: 'An individual was detected within the automated robotic cell perimeter without authorization.',
+          sensorSource: 'Phone-Camera Vision (CameraX)',
+          actualMetric: 'Zone Entry Verified',
+          timestamp: incident.timestamp || 'Just now',
+          zone: incident.zone || 'Robotic Cell A-2',
+          safetyInstructions: [
+            'Halt automated machinery in Cell A-2.',
+            'Direct individual to exit marked yellow perimeter lines.',
+            'Reset interlock switch before resuming production.'
+          ],
+          acknowledged: false
+        });
+      }
+      return ok;
+    }
+    return false;
+  };
+
+  // Test FCM Push Registration
+  const handleTestFcmPush = async (): Promise<boolean> => {
+    if (clientRef.current) {
+      return await clientRef.current.registerFcmToken({
+        device_id: config.deviceId,
+        fcm_token: config.fcmToken || 'fcm_token_device_live_38df9a2c_prod',
+        platform: 'android',
+        app_version: '2.4.1',
+        registered_at: new Date().toISOString()
+      });
+    }
+    return false;
   };
 
   const unacknowledgedIncidents = incidents.filter((i) => !i.acknowledged).length;
 
   return (
     <div className="w-full min-h-screen bg-[#07090C]">
+      {/* In-App Emergency Alert Overlay (Active on confirmed hazard) */}
+      <EmergencyAlertOverlay
+        alert={activeEmergencyAlert}
+        onAcknowledge={handleAcknowledgeAlert}
+        onViewIncidentDetails={handleViewIncidentDetails}
+        reducedMotion={config.reducedMotion}
+      />
+
       <AndroidFrame
         activeTab={activeTab}
         onTabChange={setActiveTab}
         systemState={systemState}
-        operatingMode={operatingMode}
-        onToggleMode={handleToggleMode}
         connectionStatus={connectionStatus}
         incidentCount={unacknowledgedIncidents}
         onOpenCodeModal={() => setIsCodeModalOpen(true)}
-        onSimulateHazard={handleSimulateHazard}
+        onTriggerTestEmergencyAlert={handleTriggerTestEmergencyAlert}
       >
         {activeTab === 'overview' && (
           <HomeScreen
@@ -204,7 +251,6 @@ export default function App() {
             systemState={systemState}
             incidents={incidents}
             connectionStatus={connectionStatus}
-            operatingMode={operatingMode}
             tempUnit={tempUnit}
             onToggleTempUnit={() => setTempUnit((u) => (u === 'C' ? 'F' : 'C'))}
             onNavigateTab={setActiveTab}
@@ -221,7 +267,12 @@ export default function App() {
         )}
 
         {activeTab === 'vision' && (
-          <VisionScreen detections={detections} />
+          <VisionScreen
+            detections={detections}
+            restrictedZone={restrictedZone}
+            onUpdateRestrictedZone={(zone) => setRestrictedZone((z) => ({ ...z, ...zone }))}
+            onSubmitVisionIncident={handleSubmitVisionIncident}
+          />
         )}
 
         {activeTab === 'incidents' && (
@@ -234,10 +285,13 @@ export default function App() {
         {activeTab === 'settings' && (
           <SettingsScreen
             config={config}
-            onUpdateConfig={(up) => setConfig((prev) => ({ ...prev, ...up }))}
+            onUpdateConfig={handleUpdateConfig}
             connectionStatus={connectionStatus}
+            lastTelemetryTimestamp={lastTelemetryTimestamp}
             onTestConnection={handleTestConnection}
-            onSimulateState={setConnectionStatus}
+            onReconnect={handleReconnect}
+            onTriggerTestEmergencyAlert={handleTriggerTestEmergencyAlert}
+            onTestFcmPush={handleTestFcmPush}
           />
         )}
       </AndroidFrame>

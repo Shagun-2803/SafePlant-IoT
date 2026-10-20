@@ -42,30 +42,30 @@ export const MonitorScreen: React.FC<MonitorScreenProps> = ({
   const activeSensor = sensors.find((s) => s.id === selectedSensorId) || sensors[0];
 
   return (
-    <div className="flex flex-col gap-4 p-4 pb-6 select-none">
+    <div className="flex flex-col gap-3.5 sm:gap-4 p-3 sm:p-4 pb-6 select-none max-w-full">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-bold text-white tracking-tight">Telemetry Monitor</h1>
-          <p className="text-xs text-slate-400">ESP32 GPIO & I2C Bus Diagnostics</p>
+      <div className="flex items-center justify-between gap-2 flex-wrap min-[340px]:flex-nowrap">
+        <div className="min-w-0">
+          <h1 className="text-base sm:text-lg font-bold text-white tracking-tight truncate">Telemetry Monitor</h1>
+          <p className="text-[11px] sm:text-xs text-slate-400 truncate">ESP32 GPIO & I2C Bus Diagnostics</p>
         </div>
 
         {/* State Filter Pills / Buttons */}
-        <div className="flex items-center gap-1 bg-[#12161D] p-1 rounded-xl border border-white/5 text-[11px] font-mono">
+        <div className="flex items-center gap-1 bg-[#12161D] p-1 rounded-xl border border-white/5 text-[10px] sm:text-[11px] font-mono shrink-0">
           <span className="w-2 h-2 rounded-full bg-[#10E575]" />
           <span className="text-slate-300 pr-1">{sensors.length} Channels</span>
         </div>
       </div>
 
       {/* Category Segmented Control */}
-      <div className="flex items-center gap-1.5 p-1 bg-[#12161E] rounded-xl border border-white/5">
+      <div className="flex items-center gap-1 sm:gap-1.5 p-1 bg-[#12161E] rounded-xl border border-white/5 overflow-x-auto">
         {(['all', 'thermal', 'air', 'mechanical'] as const).map((cat) => (
           <button
             key={cat}
             onClick={() => setSelectedCategory(cat)}
-            className={`flex-1 py-1.5 text-xs font-medium rounded-lg capitalize transition-colors ${
+            className={`flex-1 py-1 sm:py-1.5 px-2 text-[11px] sm:text-xs font-medium rounded-lg capitalize transition-colors truncate ${
               selectedCategory === cat
-                ? 'bg-[#1D2633] text-white shadow-sm font-semibold'
+                ? 'bg-[#1D2633] text-white shadow-xs font-semibold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -84,11 +84,11 @@ export const MonitorScreen: React.FC<MonitorScreenProps> = ({
             : 'bg-blue-500/10 border-blue-500/30 text-blue-300'
         }`}>
           <AlertCircle className="w-4 h-4 shrink-0" />
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <span className="font-semibold uppercase tracking-wider block font-mono text-[10px]">
               {connectionStatus}
             </span>
-            <span className="text-[11px] text-slate-300">
+            <span className="text-[11px] text-slate-300 line-clamp-2">
               {connectionStatus === 'STALE_DATA' && 'ESP32 heartbeat delay > 5000ms. Showing cached readings.'}
               {connectionStatus === 'DISCONNECTED' && 'Hardware node offline. Check WiFi SSID and 5V power supply.'}
               {connectionStatus === 'CONNECTING' && 'Negotiating MQTT handshake on safeplant/node_01...'}
@@ -99,11 +99,11 @@ export const MonitorScreen: React.FC<MonitorScreenProps> = ({
 
       {/* Active Sensor Deep Dive Hero Card */}
       {activeSensor && (
-        <div className="p-4 rounded-2xl bg-[#121720] border border-white/10 shadow-xl flex flex-col gap-3">
-          <div className="flex items-start justify-between">
-            <div>
+        <div className="p-3.5 sm:p-4 rounded-2xl bg-[#121720] border border-white/10 shadow-xl flex flex-col gap-3">
+          <div className="flex flex-col min-[380px]:flex-row min-[380px]:items-start justify-between gap-2.5">
+            <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <span className="text-xs font-mono px-2 py-0.5 rounded bg-white/5 text-slate-400 border border-white/5">
+                <span className="text-[11px] sm:text-xs font-mono px-2 py-0.5 rounded bg-white/5 text-slate-400 border border-white/5">
                   {activeSensor.hardwarePin}
                 </span>
                 <span className={`text-[10px] font-mono font-bold uppercase ${
@@ -112,31 +112,38 @@ export const MonitorScreen: React.FC<MonitorScreenProps> = ({
                   {activeSensor.status}
                 </span>
               </div>
-              <h2 className="text-base font-bold text-white mt-1">{activeSensor.name}</h2>
+              <h2 className="text-sm sm:text-base font-bold text-white mt-1 truncate">{activeSensor.name}</h2>
             </div>
 
-            <div className="text-right">
-              <div className="flex items-baseline justify-end gap-1">
-                <span className="text-3xl font-extrabold font-mono text-white tracking-tight">
-                  {activeSensor.category === 'temperature' && tempUnit === 'F'
+            <div className="text-left min-[380px]:text-right shrink-0">
+              <div className="flex items-baseline min-[380px]:justify-end gap-1">
+                <span className="text-2xl sm:text-3xl font-extrabold font-mono text-white tracking-tight tabular-nums">
+                  {activeSensor.value === null
+                    ? 'UNKNOWN'
+                    : activeSensor.category === 'temperature' && tempUnit === 'F'
                     ? ((activeSensor.value * 9) / 5 + 32).toFixed(1)
                     : activeSensor.category === 'flame'
                     ? (activeSensor.value === 0 ? 'SAFE' : 'FLAME')
                     : activeSensor.value}
                 </span>
                 <span className="text-xs font-mono text-slate-400">
-                  {activeSensor.category === 'temperature' ? (tempUnit === 'F' ? '°F' : '°C') : activeSensor.unit}
+                  {activeSensor.value !== null && (activeSensor.category === 'temperature' ? (tempUnit === 'F' ? '°F' : '°C') : activeSensor.unit)}
                 </span>
               </div>
-              <span className="text-[10px] font-mono text-slate-500">
-                RSSI: {activeSensor.signalDbm} dBm · {activeSensor.lastUpdated}
+              <span className="text-[9.5px] sm:text-[10px] font-mono text-slate-500 block">
+                {activeSensor.deviceTimestamp 
+                  ? `Device: ${activeSensor.deviceTimestamp.substring(11, 19)} · RSSI: ${activeSensor.signalDbm} dBm`
+                  : `RSSI: ${activeSensor.signalDbm} dBm · ${activeSensor.lastUpdated}`}
+              </span>
+              <span className={`text-[9px] font-mono uppercase ${activeSensor.source === 'esp32' ? 'text-[#10E575]' : 'text-slate-400'}`}>
+                Source: {activeSensor.source === 'esp32' ? 'ESP32 Wi-Fi Telemetry' : 'Simulation'}
               </span>
             </div>
           </div>
 
           {/* Operating Range Envelope Bar */}
           <div className="flex flex-col gap-1 pt-1">
-            <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
+            <div className="flex items-center justify-between text-[9px] sm:text-[10px] font-mono text-slate-400 gap-1 flex-wrap">
               <span>Min: {activeSensor.minRange}</span>
               <span className="text-amber-400">Warn: {activeSensor.warningThreshold}</span>
               <span className="text-red-400">Crit: {activeSensor.criticalThreshold}</span>
@@ -162,112 +169,119 @@ export const MonitorScreen: React.FC<MonitorScreenProps> = ({
               />
 
               {/* Current Value Marker */}
-              <div
-                className="absolute top-0 bottom-0 w-2 bg-white rounded-full shadow-[0_0_8px_#FFF] transition-all duration-500"
-                style={{
-                  left: `${Math.min(98, Math.max(2, (activeSensor.value / (activeSensor.maxRange || 1)) * 100))}%`,
-                }}
-              />
+              {activeSensor.value !== null && (
+                <div
+                  className="absolute top-0 bottom-0 w-2 bg-white rounded-full shadow-[0_0_8px_#FFF] transition-all duration-500"
+                  style={{
+                    left: `${Math.min(98, Math.max(2, (activeSensor.value / (activeSensor.maxRange || 1)) * 100))}%`,
+                  }}
+                />
+              )}
             </div>
           </div>
 
           {/* History Trendline SVG */}
           <div className="pt-2 border-t border-white/5">
-            <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
-              <span className="font-mono text-[10px]">Recent 8 Samples Window</span>
-              <span className="text-[#10E575] font-mono text-[10px]">Sampling 1.5s</span>
+            <div className="flex items-center justify-between text-[10px] sm:text-[11px] text-slate-400 mb-1">
+              <span className="font-mono text-[9.5px] sm:text-[10px]">Recent Samples Window</span>
+              <span className="text-[#10E575] font-mono text-[9.5px] sm:text-[10px]">FastAPI Stream</span>
             </div>
 
-            <div className="w-full h-16 relative bg-[#0D1117] rounded-lg p-2 border border-white/5">
-              <svg viewBox="0 0 280 48" className="w-full h-full overflow-visible" preserveAspectRatio="none">
-                <defs>
-                  <linearGradient id="detailGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#10E575" stopOpacity="0.3" />
-                    <stop offset="100%" stopColor="#10E575" stopOpacity="0.0" />
-                  </linearGradient>
-                </defs>
-                {/* Horizontal reference lines */}
-                <line x1="0" y1="12" x2="280" y2="12" stroke="#222C38" strokeWidth="1" strokeDasharray="3 3" />
-                <line x1="0" y1="36" x2="280" y2="36" stroke="#222C38" strokeWidth="1" strokeDasharray="3 3" />
-
-                {/* Line Path */}
-                {(() => {
-                  const h = activeSensor.history;
-                  const minH = Math.min(...h);
-                  const maxH = Math.max(...h);
-                  const rangeH = maxH - minH || 1;
-                  const points = h.map((val, i) => {
-                    const x = (i / (h.length - 1)) * 280;
-                    const y = 44 - ((val - minH) / rangeH) * 36;
-                    return `${x},${y}`;
-                  }).join(' ');
-
+            <div className="w-full h-14 sm:h-16 relative bg-[#0D1117] rounded-lg p-2 border border-white/5">
+              {(() => {
+                const validHistory = (activeSensor.history || []).filter((v): v is number => v !== null && v !== undefined);
+                if (validHistory.length < 2) {
                   return (
-                    <>
-                      <path d={`M 0,48 L ${points} L 280,48 Z`} fill="url(#detailGrad)" />
-                      <polyline fill="none" stroke="#10E575" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" points={points} />
-                    </>
+                    <div className="w-full h-full flex items-center justify-center text-[10px] font-mono text-slate-500">
+                      AWAITING MORE TELEMETRY PACKETS
+                    </div>
                   );
-                })()}
-              </svg>
+                }
+                const minH = Math.min(...validHistory);
+                const maxH = Math.max(...validHistory);
+                const rangeH = maxH - minH || 1;
+                const points = validHistory.map((val, i) => {
+                  const x = (i / (validHistory.length - 1)) * 280;
+                  const y = 44 - ((val - minH) / rangeH) * 36;
+                  return `${x},${y}`;
+                }).join(' ');
+
+                return (
+                  <svg viewBox="0 0 280 48" className="w-full h-full overflow-visible" preserveAspectRatio="none">
+                    <defs>
+                      <linearGradient id="detailGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#10E575" stopOpacity="0.3" />
+                        <stop offset="100%" stopColor="#10E575" stopOpacity="0.0" />
+                      </linearGradient>
+                    </defs>
+                    <line x1="0" y1="12" x2="280" y2="12" stroke="#222C38" strokeWidth="1" strokeDasharray="3 3" />
+                    <line x1="0" y1="36" x2="280" y2="36" stroke="#222C38" strokeWidth="1" strokeDasharray="3 3" />
+                    <path d={`M 0,48 L ${points} L 280,48 Z`} fill="url(#detailGrad)" />
+                    <polyline fill="none" stroke="#10E575" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" points={points} />
+                  </svg>
+                );
+              })()}
             </div>
           </div>
         </div>
       )}
 
-      {/* Sensor List Grid */}
+      {/* Sensor List Grid: 1 col on mobile, 2 cols on wider screens */}
       <div className="flex flex-col gap-2">
         <h3 className="text-xs font-mono uppercase tracking-wider text-slate-400 px-1">
           Hardware Channels ({filteredSensors.length})
         </h3>
 
-        <div className="grid grid-cols-1 gap-2">
+        <div className="grid grid-cols-1 min-[640px]:grid-cols-2 gap-2">
           {filteredSensors.map((sensor) => {
             const isSelected = sensor.id === selectedSensorId;
             const isCrit = sensor.status === 'critical';
             const isWarn = sensor.status === 'warning';
+            const isUnknown = sensor.value === null;
 
             return (
               <button
                 key={sensor.id}
                 onClick={() => setSelectedSensorId(sensor.id)}
-                className={`p-3 rounded-xl border text-left transition-all flex items-center justify-between gap-3 ${
+                className={`p-3 rounded-xl border text-left transition-all flex items-center justify-between gap-2.5 min-w-0 ${
                   isSelected
                     ? 'bg-[#18202C] border-[#10E575]/50 shadow-md'
                     : 'bg-[#11161F] border-white/5 hover:border-white/10'
                 }`}
               >
-                <div className="flex items-center gap-3">
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-mono text-xs font-bold ${
-                    isCrit ? 'bg-red-500/20 text-red-400' : isWarn ? 'bg-amber-500/20 text-amber-400' : 'bg-[#10E575]/20 text-[#10E575]'
+                <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-mono text-xs font-bold shrink-0 ${
+                    isUnknown ? 'bg-slate-800 text-slate-400' : isCrit ? 'bg-red-500/20 text-red-400' : isWarn ? 'bg-amber-500/20 text-amber-400' : 'bg-[#10E575]/20 text-[#10E575]'
                   }`}>
                     {sensor.category.substring(0, 2).toUpperCase()}
                   </div>
-                  <div>
-                    <span className="text-xs font-semibold text-white block">
+                  <div className="min-w-0 flex-1">
+                    <span className="text-xs font-semibold text-white block truncate max-w-[130px] min-[360px]:max-w-[170px] sm:max-w-none">
                       {sensor.name}
                     </span>
-                    <span className="text-[10px] font-mono text-slate-400">
-                      {sensor.hardwarePin}
+                    <span className="text-[10px] font-mono text-slate-400 truncate block">
+                      {sensor.hardwarePin} {sensor.source === 'esp32' && '· ESP32'}
                     </span>
                   </div>
                 </div>
 
-                <div className="text-right">
+                <div className="text-right shrink-0">
                   <div className="flex items-baseline justify-end gap-1">
-                    <span className="text-base font-bold font-mono text-white tabular-nums">
-                      {sensor.category === 'temperature' && tempUnit === 'F'
-                        ? ((sensor.value * 9) / 5 + 32).toFixed(1)
+                    <span className="text-sm sm:text-base font-bold font-mono text-white tabular-nums">
+                      {isUnknown
+                        ? 'UNKNOWN'
+                        : sensor.category === 'temperature' && tempUnit === 'F'
+                        ? ((sensor.value! * 9) / 5 + 32).toFixed(1)
                         : sensor.category === 'flame'
                         ? (sensor.value === 0 ? '0 (Clear)' : '1 (Alert)')
                         : sensor.value}
                     </span>
-                    <span className="text-[10px] font-mono text-slate-400">
-                      {sensor.category === 'temperature' ? (tempUnit === 'F' ? '°F' : '°C') : sensor.unit}
+                    <span className="text-[9.5px] sm:text-[10px] font-mono text-slate-400">
+                      {!isUnknown && (sensor.category === 'temperature' ? (tempUnit === 'F' ? '°F' : '°C') : sensor.unit)}
                     </span>
                   </div>
-                  <span className="text-[10px] font-mono text-slate-500">
-                    {sensor.lastUpdated}
+                  <span className="text-[9.5px] sm:text-[10px] font-mono text-slate-500 block">
+                    {sensor.deviceTimestamp ? sensor.deviceTimestamp.substring(11, 19) : sensor.lastUpdated}
                   </span>
                 </div>
               </button>

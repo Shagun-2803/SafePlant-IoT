@@ -12,7 +12,7 @@ export const SafePlantLogo: React.FC<SafePlantLogoProps> = ({
   showWordmark = true,
 }) => {
   return (
-    <div className={`flex items-center gap-3 select-none ${className}`}>
+    <div className={`flex items-center gap-2 sm:gap-3 select-none min-w-0 ${className}`}>
       {/* Emblem SVG: Shield + Leaf + Industrial Circuit Motif */}
       <div 
         className="relative flex items-center justify-center shrink-0"
@@ -101,16 +101,16 @@ export const SafePlantLogo: React.FC<SafePlantLogoProps> = ({
       </div>
 
       {showWordmark && (
-        <div className="flex flex-col leading-none">
-          <div className="flex items-center gap-1.5">
-            <span className="text-[17px] font-bold tracking-tight text-white font-sans">
+        <div className="flex flex-col leading-none min-w-0">
+          <div className="flex items-center gap-1 sm:gap-1.5">
+            <span className="text-[15px] sm:text-[17px] font-bold tracking-tight text-white font-sans truncate">
               Safe<span className="text-[#10E575]">Plant</span>
             </span>
-            <span className="text-[10px] font-mono font-semibold tracking-wider px-1.5 py-0.5 rounded bg-[#10E575]/15 text-[#10E575] border border-[#10E575]/30">
+            <span className="text-[9px] sm:text-[10px] font-mono font-semibold tracking-wider px-1 sm:px-1.5 py-0.2 sm:py-0.5 rounded bg-[#10E575]/15 text-[#10E575] border border-[#10E575]/30 shrink-0">
               AIoT
             </span>
           </div>
-          <span className="text-[9.5px] font-mono tracking-wider text-slate-400 uppercase mt-0.5">
+          <span className="text-[8.5px] sm:text-[9.5px] font-mono tracking-wider text-slate-400 uppercase mt-0.5 hidden min-[360px]:block truncate">
             Industrial Safety System
           </span>
         </div>

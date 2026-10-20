@@ -3,8 +3,7 @@ import {
   SensorReading, 
   SystemSafetyState, 
   IncidentRecord, 
-  ConnectionStatus,
-  OperatingMode 
+  ConnectionStatus 
 } from '../../types/safeplant';
 import { SafePlantLogo } from '../SafePlantLogo';
 import { 
@@ -34,7 +33,6 @@ interface HomeScreenProps {
   systemState: SystemSafetyState;
   incidents: IncidentRecord[];
   connectionStatus: ConnectionStatus;
-  operatingMode: OperatingMode;
   tempUnit: 'C' | 'F';
   onToggleTempUnit: () => void;
   onNavigateTab: (tab: 'overview' | 'monitor' | 'vision' | 'incidents' | 'settings') => void;
@@ -45,7 +43,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   systemState,
   incidents,
   connectionStatus,
-  operatingMode,
   tempUnit,
   onToggleTempUnit,
   onNavigateTab,
@@ -94,35 +91,45 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   const StateIcon = stateConfig.icon;
 
   return (
-    <div className="flex flex-col gap-4 p-4 pb-6 select-none">
+    <div className="flex flex-col gap-3.5 sm:gap-4 p-3 sm:p-4 pb-6 select-none max-w-full">
       {/* 1. Header with SafePlant Identity and Compact Connection Indicator */}
-      <header className="flex items-center justify-between pt-1">
-        <SafePlantLogo size={36} />
+      <header className="flex items-center justify-between pt-1 gap-2 flex-wrap min-[340px]:flex-nowrap">
+        <SafePlantLogo size={34} />
 
         {/* Compact Connection / Node Indicator */}
-        <div className="flex items-center gap-2 bg-[#131922] border border-white/5 rounded-full px-2.5 py-1">
+        <div className="flex items-center gap-1.5 sm:gap-2 bg-[#131922] border border-white/5 rounded-full px-2 sm:px-2.5 py-1 shrink-0">
           <div className="flex items-center gap-1.5">
             <span
-              className={`w-2 h-2 rounded-full ${
+              className={`w-2 h-2 rounded-full shrink-0 ${
                 connectionStatus === 'CONNECTED'
                   ? 'bg-[#10E575] shadow-[0_0_6px_#10E575]'
-                  : connectionStatus === 'CONNECTING'
+                  : connectionStatus === 'RECONNECTING' || connectionStatus === 'CONNECTING'
                   ? 'bg-amber-400 animate-pulse'
+                  : connectionStatus === 'STALE_DATA'
+                  ? 'bg-orange-400'
                   : 'bg-red-500'
               }`}
             />
-            <span className="text-[11px] font-mono text-slate-300">
-              {connectionStatus === 'CONNECTED' ? 'ESP32 Live' : connectionStatus}
+            <span className="text-[10px] sm:text-[11px] font-mono text-slate-300">
+              {connectionStatus === 'CONNECTED' 
+                ? 'FastAPI Live' 
+                : connectionStatus === 'RECONNECTING'
+                ? 'Reconnecting...'
+                : connectionStatus === 'STALE_DATA'
+                ? 'Stale Heartbeat'
+                : connectionStatus}
             </span>
           </div>
           <span className="text-slate-600">|</span>
-          <span className="text-[10px] font-mono text-slate-400">14ms</span>
+          <span className="text-[9.5px] sm:text-[10px] font-mono text-slate-400">
+            {tempReading.deviceTimestamp ? tempReading.deviceTimestamp.substring(11, 19) : '14ms'}
+          </span>
         </div>
       </header>
 
       {/* 2. Hero Section: Factory Photography with Restrained Digital Twin Overlays */}
-      <section className="relative rounded-3xl overflow-hidden border border-white/10 shadow-2xl group">
-        <div className="relative h-56 w-full overflow-hidden bg-[#0A0D11]">
+      <section className="relative rounded-2xl sm:rounded-3xl overflow-hidden border border-white/10 shadow-2xl group">
+        <div className="relative h-44 sm:h-52 md:h-56 w-full overflow-hidden bg-[#0A0D11]">
           <img
             src={heroPlantImg}
             alt="SafePlant Industrial Facility Telemetry"
@@ -138,38 +145,38 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           <div className="absolute inset-0 bg-industrial-grid opacity-30 pointer-events-none" />
 
           {/* Top Digital Twin Telemetry Badges */}
-          <div className="absolute top-3 left-3 right-3 flex items-center justify-between text-[10px] font-mono">
-            <div className="flex items-center gap-1.5 bg-[#0B0E12]/80 backdrop-blur-md px-2.5 py-1 rounded-lg border border-white/10 text-slate-300">
+          <div className="absolute top-2.5 sm:top-3 left-2.5 sm:left-3 right-2.5 sm:right-3 flex items-center justify-between text-[9px] sm:text-[10px] font-mono gap-1">
+            <div className="flex items-center gap-1.5 bg-[#0B0E12]/80 backdrop-blur-md px-2 sm:px-2.5 py-1 rounded-lg border border-white/10 text-slate-300 truncate">
               <span className="text-slate-400">ZONE:</span>
-              <span className="font-semibold text-white">REFINERY TOWER A-4</span>
+              <span className="font-semibold text-white truncate">REFINERY A-4</span>
             </div>
 
-            <div className="flex items-center gap-1.5 bg-[#0B0E12]/80 backdrop-blur-md px-2.5 py-1 rounded-lg border border-white/10 text-slate-300">
-              <span className="text-[#10E575]">DIGITAL TWIN:</span>
+            <div className="flex items-center gap-1.5 bg-[#0B0E12]/80 backdrop-blur-md px-2 sm:px-2.5 py-1 rounded-lg border border-white/10 text-slate-300 shrink-0">
+              <span className="text-[#10E575]">TWIN:</span>
               <span className="font-semibold text-white">SYNCED</span>
             </div>
           </div>
 
           {/* Bottom Hero Overlay */}
-          <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between">
-            <div>
-              <span className="text-[11px] font-mono uppercase tracking-wider text-[#10E575]">
+          <div className="absolute bottom-2.5 sm:bottom-3 left-2.5 sm:left-3 right-2.5 sm:right-3 flex flex-wrap sm:flex-nowrap items-end justify-between gap-2">
+            <div className="min-w-0">
+              <span className="text-[10px] sm:text-[11px] font-mono uppercase tracking-wider text-[#10E575] block">
                 Facility Health Index
               </span>
               <div className="flex items-baseline gap-1.5">
-                <span className="text-3xl font-extrabold font-mono text-white tracking-tight">
+                <span className="text-2xl sm:text-3xl font-extrabold font-mono text-white tracking-tight tabular-nums">
                   {systemState === 'CRITICAL' ? '71.2' : systemState === 'WARNING' ? '88.5' : '99.4'}%
                 </span>
-                <span className="text-xs text-slate-300 font-mono">Continuous Telemetry</span>
+                <span className="text-[10px] sm:text-xs text-slate-300 font-mono hidden min-[360px]:inline">Telemetry OK</span>
               </div>
             </div>
 
             <button
               onClick={() => onNavigateTab('vision')}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 backdrop-blur-md border border-white/10 text-white text-xs font-medium transition-colors"
+              className="flex items-center gap-1 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl bg-white/10 hover:bg-white/15 backdrop-blur-md border border-white/10 text-white text-[11px] sm:text-xs font-medium transition-colors shrink-0"
             >
-              <span>AI Vision View</span>
-              <ArrowUpRight className="w-3.5 h-3.5" />
+              <span>AI Vision</span>
+              <ArrowUpRight className="w-3 sm:w-3.5 h-3 sm:h-3.5" />
             </button>
           </div>
         </div>
@@ -177,30 +184,30 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
       {/* 3. Safety Focal Point — Hero State Banner */}
       <section
-        className={`p-3.5 rounded-2xl border transition-all duration-300 flex items-center justify-between gap-3 ${stateConfig.bg} ${stateConfig.border} ${stateConfig.glow}`}
+        className={`p-3 sm:p-3.5 rounded-2xl border transition-all duration-300 flex items-center justify-between gap-2.5 sm:gap-3 ${stateConfig.bg} ${stateConfig.border} ${stateConfig.glow}`}
       >
-        <div className="flex items-center gap-3">
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${stateConfig.bg} border ${stateConfig.border}`}>
-            <StateIcon className={`w-5 h-5 ${stateConfig.text}`} />
+        <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+          <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center shrink-0 ${stateConfig.bg} border ${stateConfig.border}`}>
+            <StateIcon className={`w-4 h-4 sm:w-5 sm:h-5 ${stateConfig.text}`} />
           </div>
-          <div className="flex flex-col">
+          <div className="flex flex-col min-w-0">
             <div className="flex items-center gap-2">
-              <span className={`text-xs font-mono font-bold tracking-wider ${stateConfig.text}`}>
+              <span className={`text-[11px] sm:text-xs font-mono font-bold tracking-wider truncate ${stateConfig.text}`}>
                 {stateConfig.label}
               </span>
             </div>
-            <p className="text-[11px] text-slate-300 leading-tight mt-0.5">
+            <p className="text-[10px] sm:text-[11px] text-slate-300 leading-tight mt-0.5 truncate">
               {stateConfig.sub}
             </p>
           </div>
         </div>
 
-        <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded ${stateConfig.bg} border ${stateConfig.border} ${stateConfig.text}`}>
+        <span className={`text-[9px] sm:text-[10px] font-mono font-bold px-1.5 sm:px-2 py-0.5 rounded shrink-0 ${stateConfig.bg} border ${stateConfig.border} ${stateConfig.text}`}>
           {stateConfig.badge}
         </span>
       </section>
 
-      {/* 4. Sensor Matrix — Varied Components (Temperature, Humidity, Gas/Smoke, Flame) */}
+      {/* 4. Sensor Matrix — Reflows into 1 col on narrow screens, 2 cols on mobile/tablet, and up to 4 cols on wide viewports */}
       <section className="flex flex-col gap-2">
         <div className="flex items-center justify-between px-1">
           <h2 className="text-xs font-mono uppercase tracking-wider text-slate-400">
@@ -215,8 +222,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           </button>
         </div>
 
-        {/* 2x2 Grid of Varied Sensors */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {/* Adaptive Grid: 1 col on <370px, 2 cols on standard mobile/tablet, 4 cols on wide display */}
+        <div className="grid grid-cols-1 min-[370px]:grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
           <TemperatureArcGauge
             reading={tempReading}
             unit={tempUnit}
@@ -247,7 +254,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         </div>
 
         <div className="flex flex-col gap-2">
-          {recentIncidents.map((inc, idx) => {
+          {recentIncidents.map((inc) => {
             const isCrit = inc.severity === 'critical';
             const isWarn = inc.severity === 'medium';
             const badgeColor = isCrit ? 'text-red-400' : isWarn ? 'text-amber-400' : 'text-[#10E575]';
@@ -255,15 +262,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             return (
               <div
                 key={inc.id}
-                className="p-3 rounded-xl bg-[#11161F] border border-white/5 hover:border-white/10 transition-colors flex items-start justify-between gap-3"
+                className="p-3 rounded-xl bg-[#11161F] border border-white/5 hover:border-white/10 transition-colors flex items-start justify-between gap-2.5 min-w-0"
               >
-                <div className="flex flex-col gap-1">
-                  <div className="flex items-center gap-2">
-                    <span className={`text-[10px] font-mono font-bold uppercase ${badgeColor}`}>
+                <div className="flex flex-col gap-1 min-w-0 flex-1">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className={`text-[9.5px] sm:text-[10px] font-mono font-bold uppercase shrink-0 ${badgeColor}`}>
                       {inc.severity}
                     </span>
                     <span className="text-slate-600 text-xs">·</span>
-                    <span className="text-xs font-semibold text-white truncate max-w-[200px]">
+                    <span className="text-xs font-semibold text-white truncate flex-1 min-w-0">
                       {inc.title}
                     </span>
                   </div>
@@ -271,14 +278,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                     {inc.description}
                   </p>
                   <div className="flex items-center gap-2 text-[10px] font-mono text-slate-500 mt-0.5">
-                    <span>{inc.zone}</span>
+                    <span className="truncate">{inc.zone}</span>
                     <span>·</span>
-                    <span>{inc.timestamp}</span>
+                    <span className="shrink-0">{inc.timestamp}</span>
                   </div>
                 </div>
 
                 {inc.resolved && (
-                  <div className="flex items-center gap-1 text-[10px] font-mono text-[#10E575] bg-[#10E575]/10 px-2 py-0.5 rounded shrink-0">
+                  <div className="flex items-center gap-1 text-[9.5px] sm:text-[10px] font-mono text-[#10E575] bg-[#10E575]/10 px-2 py-0.5 rounded shrink-0">
                     <CheckCircle2 className="w-3 h-3" />
                     <span>Logged</span>
                   </div>
