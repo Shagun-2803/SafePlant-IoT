@@ -1,0 +1,6 @@
+{
+  "name": "SafePlant AIoT - Industrial Safety",
+  "description": "Visually exceptional, premium industrial-safety Android application designed with Material 3, Jetpack Compose architecture, digital twin telemetry, AI vision, and IoT sensor monitoring.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
