@@ -1,64 +1,74 @@
-import { SensorReading, AiDetection, IncidentRecord, DeviceConfig, RestrictedZoneBoundary } from '../types/safeplant';
+import { 
+  SensorReading, 
+  AiDetection, 
+  IncidentRecord, 
+  DeviceConfig, 
+  RestrictedZonePolygon 
+} from '../types/safeplant';
 
 // Clean initial sensor definitions with NO fabricated readings (value: null / UNKNOWN)
+// Prototype hardware: DHT11 (Temp & Humidity), MQ-2 Gas/Smoke, Optical Flame
 export const initialSensors: SensorReading[] = [
   {
-    id: 'temp_core',
-    name: 'Reactor Enclosure Temp',
+    id: 'temp_dht11',
+    name: 'Ambient Temperature (DHT11)',
     category: 'temperature',
     value: null,
     unit: '°C',
-    minRange: -10,
-    maxRange: 80,
+    minRange: 0,
+    maxRange: 50,
     warningThreshold: 45.0,
-    criticalThreshold: 60.0,
+    criticalThreshold: 50.0,
     status: 'unknown',
     trend: 'stable',
     history: [],
-    hardwarePin: 'GPIO 4 (DHT22)',
+    hardwarePin: 'GPIO 4 (DHT11)',
     signalDbm: 0,
     lastUpdated: 'No data',
-    source: 'unknown'
+    source: 'esp32',
+    calibrationStatus: 'calibrated'
   },
   {
-    id: 'humidity_ambient',
-    name: 'Bay Atmosphere Humidity',
+    id: 'humidity_dht11',
+    name: 'Relative Humidity (DHT11)',
     category: 'humidity',
     value: null,
     unit: '%RH',
-    minRange: 10,
-    maxRange: 100,
+    minRange: 20,
+    maxRange: 90,
     warningThreshold: 75.0,
     criticalThreshold: 85.0,
     status: 'unknown',
     trend: 'stable',
     history: [],
-    hardwarePin: 'GPIO 4 (DHT22)',
+    hardwarePin: 'GPIO 4 (DHT11)',
     signalDbm: 0,
     lastUpdated: 'No data',
-    source: 'unknown'
+    source: 'esp32',
+    calibrationStatus: 'calibrated'
   },
   {
-    id: 'gas_combustible',
-    name: 'Vapor & Combustible Gas',
+    id: 'gas_mq2',
+    name: 'Gas / Smoke (MQ-2)',
     category: 'gas',
     value: null,
-    unit: 'PPM',
+    unit: 'Raw ADC',
     minRange: 0,
-    maxRange: 1000,
-    warningThreshold: 250,
-    criticalThreshold: 500,
+    maxRange: 4095,
+    warningThreshold: 1500,
+    criticalThreshold: 2500,
     status: 'unknown',
     trend: 'stable',
     history: [],
-    hardwarePin: 'ADC1_CH0 (MQ-2)',
+    hardwarePin: 'ADC1_CH0 (Pin 36)',
     signalDbm: 0,
     lastUpdated: 'No data',
-    source: 'unknown'
+    source: 'esp32',
+    calibrationStatus: 'raw' // Explicitly uncalibrated raw ADC reading
   },
   {
     id: 'flame_optical',
-    name: 'UV/IR Flame Detector',
+    name: 'Optical Flame Detector',
     category: 'flame',
     value: null,
     unit: 'STATE',
@@ -72,73 +82,62 @@ export const initialSensors: SensorReading[] = [
     hardwarePin: 'GPIO 15 (KY-026)',
     signalDbm: 0,
     lastUpdated: 'No data',
-    source: 'unknown'
-  },
-  {
-    id: 'pressure_steam',
-    name: 'Boiler Steam Pressure',
-    category: 'pressure',
-    value: null,
-    unit: 'bar',
-    minRange: 0,
-    maxRange: 10,
-    warningThreshold: 7.5,
-    criticalThreshold: 9.0,
-    status: 'unknown',
-    trend: 'stable',
-    history: [],
-    hardwarePin: 'I2C (BMP280)',
-    signalDbm: 0,
-    lastUpdated: 'No data',
-    source: 'unknown'
-  },
-  {
-    id: 'vibration_turbine',
-    name: 'Turbine Vibration Index',
-    category: 'vibration',
-    value: null,
-    unit: 'mm/s',
-    minRange: 0,
-    maxRange: 15,
-    warningThreshold: 4.5,
-    criticalThreshold: 7.0,
-    status: 'unknown',
-    trend: 'stable',
-    history: [],
-    hardwarePin: 'I2C (MPU6050)',
-    signalDbm: 0,
-    lastUpdated: 'No data',
-    source: 'unknown'
+    source: 'esp32',
+    calibrationStatus: 'calibrated'
   }
 ];
 
 // Initial detections empty until real vision inference or backend reports events
 export const initialDetections: AiDetection[] = [];
 
-export const defaultRestrictedZone: RestrictedZoneBoundary = {
+// Multi-vertex polygon for camera intrusion zone
+export const defaultRestrictedPolygon: RestrictedZonePolygon = {
   id: 'zone_danger_01',
-  name: 'Robotic Cell A-2 Hazard Perimeter',
-  x: 20,
-  y: 30,
-  w: 60,
-  h: 55,
+  name: 'Robotic Cell Perimeter',
+  vertices: [
+    { x: 18, y: 28 },
+    { x: 82, y: 28 },
+    { x: 88, y: 84 },
+    { x: 14, y: 84 }
+  ],
   enabled: true,
-  cooldownSeconds: 3
+  cooldownSeconds: 15,
+  exitConfirmationSeconds: 5
 };
 
 // Initial incidents empty until real backend incident records arrive
 export const initialIncidents: IncidentRecord[] = [];
 
-// Device config with FCM unconfigured (no fabricated dummy token)
+// Section 7: Persistent threshold & alert configuration with clearly labelled prototype defaults
 export const initialDeviceConfig: DeviceConfig = {
-  fastApiUrl: 'http://192.168.1.120:8000',
+  fastApiUrl: typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000',
   deviceId: 'ESP32-SAFEPLANT-01A',
-  firmwareVersion: 'v2.4.1-rc3 (FreeRTOS)',
-  pollingIntervalMs: 2000,
+  firmwareVersion: 'v2.4.1 (ESP-IDF / FreeRTOS)',
+  pollingIntervalMs: 2500,
   reducedMotion: false,
   hapticFeedback: true,
   temperatureUnit: 'C',
   webSocketEnabled: true,
   fcmToken: null, // NOT CONFIGURED in web prototype
-  notificationsEnabled: false
+  notificationsEnabled: false,
+
+  // Section 7 required settings:
+  tempWarningThreshold: 45.0,
+  tempCriticalThreshold: 50.0,
+  gasWarningThreshold: 1500,
+  gasCriticalThreshold: 2500,
+  humidityWarningThreshold: 75.0,
+  humidityCriticalThreshold: 85.0,
+  flameEventEnabled: true,
+  tempNotificationsEnabled: true,
+  gasNotificationsEnabled: true,
+  humidityNotificationsEnabled: false,
+  flameNotificationsEnabled: true,
+  intrusionAlertEnabled: true,
+  intrusionReminderCooldownSec: 15,
+  exitConfirmationSec: 5,
+  telemetryStaleTimeoutSec: 8,
+  smsDestinationNumber: '+91 98765 43210',
+  fcmNotificationsEnabled: false,
+  smsNotificationsEnabled: false
 };

@@ -1,0 +1,625 @@
+# SafePlant — Existing Project Refactor and Full Functional Implementation
+
+## ROLE
+
+Act as a senior Android engineer, Kotlin/Jetpack Compose developer, FastAPI backend engineer, and IoT/edge-AI integration engineer.
+
+You must modify my EXISTING SafePlant project. Do not create a new unrelated application, replace the existing backend unnecessarily, or return only a design mockup.
+
+The goal is a functional industrial safety monitoring prototype that connects a native Android app to the existing ESP32 hardware and FastAPI backend.
+
+First inspect the current source code, project structure, API contracts, database schema, Android dependencies, and existing functionality. Then implement the changes incrementally, preserving working code wherever possible.
+
+Do not claim a feature is implemented or tested unless it genuinely is.
+
+---
+
+## 1. REQUIRED WORKING ARCHITECTURE
+
+### Android application
+- Native Android application using Kotlin.
+- Jetpack Compose and Material 3.
+- Maintain the existing application package name, Gradle configuration, architecture, and working screens wherever appropriate.
+- Use a ViewModel and repository-based architecture.
+- Use coroutines and Flow/StateFlow for asynchronous data.
+- Handle loading, disconnected, stale, error, and empty states explicitly.
+- Do not display invented values when data is unavailable.
+
+### Existing FastAPI backend
+Preserve and inspect the current FastAPI application and SQLite database before changing them.
+
+Existing API routes known to be present include:
+
+- GET `/api/health`
+- GET `/api/status`
+- GET `/api/telemetry/latest`
+- GET `/api/telemetry`
+- GET `/api/telemetry/history?limit=60`
+- POST `/api/telemetry`
+- GET `/api/incidents`
+- GET `/api/ai/status`
+- GET `/api/ai/events`
+- WebSocket `/ws`
+
+Additional routes may already exist for configuration, incidents, emergency actions, and demonstration controls.
+
+Inspect the actual implementation and request/response schemas before using these routes. Do not assume undocumented request formats or create duplicate endpoints without need.
+
+Preserve existing functionality and extend the backend only where necessary.
+
+### Hardware
+The prototype uses an ESP32 with:
+- DHT11 temperature and humidity sensor.
+- MQ-2 gas/smoke sensor.
+- Flame sensor.
+- Buzzer and relay-controlled low-voltage fan or model hardware.
+
+The ESP32 sends telemetry to FastAPI over Wi-Fi.
+
+MQ-2 readings must not be represented as calibrated gas concentrations unless calibration supports that claim. Never describe MQ-2 as a chlorine detector. Do not infer physical relay or buzzer activation from a command flag alone when feedback is unavailable.
+
+---
+
+## 2. REMOVE UNNECESSARY FEATURES
+
+Simplify the existing Android app to the following main destinations:
+
+1. Dashboard
+2. Readings
+3. Camera
+4. Incidents
+
+Place Settings inside a top-bar settings action or another compact entry point.
+
+Remove:
+- Unnecessary onboarding flows.
+- Decorative statistics that do not come from real data.
+- Duplicate sensor cards.
+- Fake demo values and simulated incidents in production mode.
+- Nonfunctional controls.
+- Placeholder charts.
+- Repeated status panels that convey the same information.
+- Unrelated AI, analytics, configuration, or management screens that are not required for the features listed in this specification.
+
+Retain useful parts of the existing design and code. Do not delete working backend capabilities merely because they are not visible in the primary navigation.
+
+Use a restrained industrial visual style: dark graphite surfaces, clear typography, restrained green for normal conditions, amber for warnings, and red for critical events. Prioritize readability, fast recognition of hazards, and accessibility over decoration.
+
+---
+
+## 3. DASHBOARD — REAL HARDWARE STATUS
+
+Create one compact dashboard containing the following information.
+
+### Temperature
+- Current temperature in °C.
+- Current status: Normal, Warning, Critical, or Unavailable.
+- Configurable warning and critical thresholds.
+- Last update time.
+
+### Humidity
+- Current relative humidity in %.
+- Optional configured environmental thresholds.
+- Last update time.
+
+### Gas/smoke
+- Current actual value from the backend.
+- Clearly state the unit and whether it is raw, estimated, or calibrated.
+- Configurable warning and critical thresholds.
+- Show sensor unavailability or invalid data honestly.
+
+### Flame
+- Display Detected or Not detected using actual sensor telemetry.
+- A flame detection must generate an incident according to the configured rules.
+- Do not confuse sensor health with flame presence.
+
+### ESP32 and data connection
+Display:
+- Connected or Disconnected.
+- Last telemetry timestamp.
+- Fresh, Stale, or Unavailable status.
+- Last connection error when useful.
+
+Use a configurable telemetry freshness timeout. Do not show stale readings as current.
+
+### Buzzer and relay
+Display the real known state:
+- ON
+- OFF
+- Unknown / Feedback unavailable
+
+Distinguish commanded state from physically verified state. If the firmware or hardware has no feedback sensor, label the state as commanded rather than confirmed.
+
+Do not add fan or buzzer control buttons unless the existing backend and firmware implement safe, functional controls. If controls are implemented, validate commands and report their actual outcome.
+
+### Overall safety status
+Calculate an overall status using actual sensor conditions and backend rules.
+
+Possible statuses:
+- NORMAL
+- WARNING
+- CRITICAL
+- DISCONNECTED
+- STALE DATA
+
+A flame detection or other critical event must not be hidden by a lower-priority normal reading.
+
+Do not treat a disconnected sensor as a zero reading or a safe condition.
+
+---
+
+## 4. READINGS AND MEANINGFUL GRAPHS
+
+Build the Readings screen around useful historical data rather than decorative charts.
+
+### Required charts
+1. Temperature over time.
+2. Humidity over time.
+3. Gas/smoke sensor value over time.
+4. Incident count by event type and time period.
+
+Use real telemetry and persisted incident records.
+
+### Time ranges
+Provide:
+- Last hour.
+- Last 6 hours.
+- Last 24 hours.
+- Last 7 days.
+
+If the backend does not contain enough historical data for a range, display the available range and an honest empty state. Do not fabricate historical points.
+
+### Chart behavior
+- Use timestamps on the horizontal axis.
+- Label values and units accurately.
+- Show configured warning and critical threshold lines where meaningful.
+- Support loading, no-data, stale-data, and error states.
+- Keep charts readable on phone-sized screens.
+- Avoid unnecessary animations and excessive chart decoration.
+
+The backend must provide sufficient timestamped telemetry history. Inspect the existing endpoints first. Extend the backend only if required to support time-range queries or useful aggregations.
+
+If new API parameters are added, document their formats and preserve compatibility with existing requests.
+
+---
+
+## 5. PHONE CAMERA — REAL PERSON DETECTION
+
+Implement camera monitoring using Android CameraX and a real on-device person-detection model compatible with the project's Android configuration.
+
+Do not implement fake detections, a static bounding box, random people counts, or a camera preview that claims to perform AI.
+
+### Camera interface
+The Camera screen must include:
+- Live phone camera preview.
+- Start Monitoring and Stop Monitoring controls.
+- Permission handling.
+- Current monitoring state.
+- Real-time person count.
+- Bounding boxes around actual model detections when supported.
+- A manually configurable restricted polygon.
+- Intrusion status and recent detection information.
+
+### Restricted polygon
+Allow the user to draw a polygon over the camera preview.
+
+Requirements:
+- Support multiple polygon vertices.
+- Show the polygon clearly over the preview.
+- Provide Save, Cancel, Clear, and Edit actions.
+- Save the polygon locally and restore it on app restart.
+- Store the coordinate system consistently.
+- Account for preview resizing, rotation, cropping, and aspect-ratio changes.
+- Convert detection coordinates correctly into preview coordinates.
+
+Use a documented coordinate transformation so polygon boundaries remain aligned with the camera image.
+
+### Person detection
+- Run a genuine compatible person-detection model on the device.
+- Use CameraX image analysis with a suitable executor and lifecycle management.
+- Close every ImageProxy correctly.
+- Avoid blocking the UI thread.
+- Prevent unbounded image-analysis queues.
+- Use the model's actual confidence and bounding-box outputs.
+- Clearly distinguish detected people from people counted inside the restricted region.
+
+The exact model must be selected after inspecting compatibility, licensing, model availability, and Android integration requirements. Do not invent a model file or pretend that a dependency automatically provides trained model weights.
+
+If the model cannot be obtained or loaded, show an explicit unavailable/error state. Do not silently fall back to simulated detection.
+
+### Intrusion detection
+A person is considered inside when a consistent reference point on that person's detected bounding box, such as the bottom-center point, lies inside the configured polygon.
+
+Use tracking or short-term identity association if feasible. Avoid generating a new incident for every frame.
+
+Required behavior:
+- Generate an intrusion event when a person enters the restricted region.
+- Send a new entry notification when a new intrusion episode starts.
+- While a person remains inside, permit repeat reminders only after the configured cooldown.
+- Do not repeat alerts on every camera frame.
+- Reset the entry-alert state after the person leaves the region for a configurable exit-confirmation period.
+- Handle multiple detected people and avoid duplicate alerts when detections fluctuate briefly.
+- Record the event timestamp, person count, region identifier, and relevant detection confidence when available.
+
+If identity tracking is unavailable, use carefully documented temporary tracking rather than claiming reliable individual identification.
+
+Do not identify people by name or use facial recognition.
+
+---
+
+## 6. BACKGROUND CAMERA MONITORING
+
+Support user-started foreground monitoring with an appropriate Android foreground service.
+
+Requirements:
+- Ask for camera permission only when needed.
+- Request the appropriate foreground-service permissions and service type for the target Android SDK.
+- Show a persistent Android notification while monitoring is active.
+- Include an appropriate action to stop monitoring.
+- Respect Android camera privacy indicators and operating-system restrictions.
+- Stop camera resources and executors correctly when monitoring ends.
+- Handle process recreation, service errors, permission revocation, and device restart honestly.
+
+Do not claim that the camera continues to work after the user force-stops the app or when Android blocks camera access.
+
+Do not automatically activate the camera on boot without a valid user-authorized design and compliance with Android restrictions.
+
+If background camera monitoring is not supported by the existing setup, explain the limitation and implement the safest supported version rather than pretending it works.
+
+---
+
+## 7. THRESHOLD CONFIGURATION
+
+Provide a compact Settings screen with persistent backend-backed settings.
+
+Required settings:
+- Temperature warning threshold.
+- Temperature critical threshold.
+- Gas/smoke warning threshold.
+- Gas/smoke critical threshold.
+- Optional humidity warning/critical thresholds.
+- Flame event enabled/disabled.
+- Temperature, gas/smoke, humidity, and flame notification preferences.
+- Intrusion alert preference.
+- Intrusion reminder cooldown.
+- Exit-confirmation duration.
+- Telemetry stale timeout.
+- SMS destination phone number.
+- FCM notification preference.
+- SMS notification preference.
+
+Requirements:
+- Provide clearly labelled initial prototype defaults.
+- Do not present prototype thresholds as certified safety limits.
+- Validate numeric values, units, ranges, and ordering.
+- Require warning thresholds to be logically less severe than critical thresholds where applicable.
+- Validate phone numbers before saving.
+- Save settings persistently.
+- Handle backend errors without pretending that settings were saved.
+- Restore settings after app restart.
+- Do not store SMS provider secrets or service-account credentials on the phone.
+
+Inspect the existing configuration API and reuse it when possible. If necessary, add authenticated or otherwise appropriately protected backend configuration endpoints consistent with the existing security model.
+
+Do not expose unauthenticated internet-accessible controls for safety-critical hardware.
+
+---
+
+## 8. INCIDENT MANAGEMENT — PERSISTENT AND COMPLETE
+
+Every genuine abnormality must create a persistent incident record, even if notification delivery fails.
+
+Incident sources include:
+- Temperature warning/critical threshold crossing.
+- Gas/smoke warning/critical threshold crossing.
+- Flame detection.
+- Configured humidity abnormality.
+- Camera intrusion.
+- ESP32 disconnection or stale telemetry when device-health alerts are enabled.
+
+### Incident lifecycle
+Implement a clear lifecycle:
+- Open / Active.
+- Acknowledged.
+- Resolved.
+
+Where relevant, distinguish an ongoing abnormal condition from the historical event that first triggered it.
+
+### Incident record
+Persist:
+- Unique incident ID.
+- Event type.
+- Severity.
+- Source device or camera.
+- Created timestamp.
+- Last observed timestamp.
+- Triggering sensor value.
+- Threshold value and unit.
+- Relevant telemetry snapshot.
+- Camera region and people count for intrusion events, where available.
+- Notification-channel delivery attempts.
+- Delivery status and failure reason.
+- Acknowledgement timestamp.
+- Resolution timestamp.
+- Resolution reason or optional notes.
+
+Use the backend database as the authoritative store for incidents from the ESP32 and camera. Use transactions and stable event IDs to avoid duplicate records.
+
+### Notification attempt records
+Store a separate delivery-attempt record for every FCM or SMS attempt:
+- Incident ID.
+- Channel.
+- Attempt timestamp.
+- Attempt status.
+- Provider message ID if returned.
+- Error details when available.
+- Retry count or next retry time when applicable.
+
+Do not mark a notification as delivered merely because a request was queued. Distinguish queued, accepted by provider, failed, and confirmed delivery if the provider actually supplies that confirmation.
+
+### Incident screen
+Show:
+- Newest incidents first.
+- Severity and event type.
+- Date and time.
+- Sensor values or intrusion details.
+- Notification delivery state.
+- Acknowledge and Resolve actions.
+- Incident detail view.
+
+Provide simple filtering by severity, event type, source, and date where supported.
+
+Do not delete historical incident records when a condition clears or an incident is resolved.
+
+---
+
+## 9. ALERT ENGINE AND DUPLICATE PREVENTION
+
+Implement a consistent event and alert pipeline.
+
+For hardware:
+1. Receive real telemetry.
+2. Validate its schema, timestamp, and source.
+3. Evaluate the configured threshold rules.
+4. Detect state transitions.
+5. Create or update the active incident.
+6. Trigger the physical buzzer only through a supported backend/firmware mechanism.
+7. Dispatch configured notification channels.
+8. Persist each notification attempt.
+9. Update the incident lifecycle when the condition clears.
+
+For camera intrusion:
+1. Run actual on-device detection.
+2. Evaluate detections against the saved polygon.
+3. Determine entry and continued presence.
+4. Send an idempotent camera-event request to FastAPI.
+5. Persist the incident.
+6. Dispatch configured push and SMS notifications.
+7. Apply the entry/reminder cooldown.
+8. Record exit and resolution information when appropriate.
+
+Use stable event IDs, database constraints, and idempotency to prevent duplicate incident creation.
+
+Do not create an incident on every telemetry packet while the same abnormal condition persists. Model event transitions and ongoing active conditions separately.
+
+Implement configurable retry behavior with limits and backoff. Do not retry indefinitely or generate notification storms.
+
+The physical buzzer and mobile notification are separate mechanisms. Clearly document which component triggers each one.
+
+---
+
+## 10. FIREBASE CLOUD MESSAGING
+
+Implement real Firebase Cloud Messaging integration for Android push notifications.
+
+Required work:
+- Inspect the existing Android application ID.
+- Add the correct Firebase Android configuration after the Firebase project is provided.
+- Add the required Firebase Messaging dependency and Android service.
+- Register and refresh FCM tokens.
+- Register the installation token with FastAPI.
+- Support token invalidation or refresh.
+- Request Android notification permission where required.
+- Create appropriate notification channels.
+- Display notifications with event type, severity, timestamp, and a safe summary.
+- Open the relevant incident when a notification is tapped.
+- Support backend sending to registered device tokens.
+
+Backend requirements:
+- Use the Firebase Admin SDK or an appropriate server-side FCM API.
+- Load credentials securely from environment configuration or a managed secret.
+- Never commit service-account JSON or private credentials.
+- Handle invalid tokens and provider errors.
+- Record each notification attempt.
+- Avoid sending duplicate alerts for the same incident transition.
+
+Use the Firebase project configuration supplied by the project owner. If credentials are unavailable, implement the integration structure and document the exact setup steps. Do not use fake FCM tokens or claim live push delivery has been tested.
+
+FCM delivery is not guaranteed when the phone is offline, notifications are disabled, or Android restricts delivery.
+
+---
+
+## 11. SMS PROVIDER — INDIA
+
+Recommend MSG91 as the initial provider to evaluate for India-compatible transactional SMS, subject to current account eligibility, pricing, DLT requirements, sender-ID/template registration, and API availability.
+
+Before finalizing provider-specific code, verify the provider's current official API documentation and requirements.
+
+Implement an SMS provider interface in the backend so the provider can be replaced without rewriting incident management.
+
+Requirements:
+- Store API credentials only in backend environment variables or managed secrets.
+- Validate and normalize the destination number.
+- Follow applicable Indian SMS/DLT and consent requirements.
+- Configure the approved sender ID and template when required.
+- Send a concise safety alert with event type, severity, timestamp, and a useful incident reference.
+- Avoid including unnecessary personal or sensitive information.
+- Persist request status, provider response ID, and failure details.
+- Implement bounded retries and rate limiting.
+- Support a test mode that cannot be confused with real delivery.
+
+Do not hardcode credentials or pretend SMS works without valid provider configuration and account approval.
+
+If provider setup cannot be completed, leave a clear configuration-required status and provide exact setup instructions.
+
+---
+
+## 12. FASTAPI AND SQLITE IMPLEMENTATION
+
+Inspect the current database schema and migrations before modifying them.
+
+Preserve existing tables and data. Extend the schema only when necessary.
+
+Likely required persistent entities include:
+- Telemetry history.
+- Incident records.
+- Incident state transitions.
+- Notification delivery attempts.
+- Device registrations and FCM tokens.
+- Alert configuration.
+- Camera intrusion events or their association with incidents.
+
+Reuse equivalent existing tables rather than creating duplicates.
+
+Use timestamps consistently, preferably stored in UTC and displayed in the user's local timezone.
+
+Add appropriate database indexes for timestamp, severity, event type, source, incident status, and incident ID.
+
+Implement or extend endpoints only as required for:
+- Historical telemetry with time-range filtering.
+- Persistent alert configuration.
+- Incident details and state transitions.
+- Camera intrusion event ingestion.
+- FCM device-token registration.
+- Notification-attempt status.
+- SMS/provider delivery integration.
+
+Use the existing routes whenever suitable. Document request schemas, response schemas, validation, and error responses.
+
+Protect configuration changes, token registration, and hardware-control endpoints using an appropriate security mechanism consistent with the project. Do not expose credentials in API responses or logs.
+
+Ensure background simulation cannot overwrite real hardware telemetry while hardware mode is active. Production behavior must not generate fake readings or incidents.
+
+---
+
+## 13. REAL-TIME DATA AND RECONNECTION
+
+Use the existing WebSocket `/ws` if its protocol supports the required updates.
+
+Requirements:
+- Subscribe to live telemetry and incident changes.
+- Parse real backend messages according to the actual schema.
+- Reconnect with bounded exponential backoff.
+- Detect stale telemetry independently of socket connectivity.
+- Refresh current status from REST endpoints after reconnecting.
+- Use REST polling as a genuine fallback if WebSocket connectivity fails.
+- Cancel polling and socket resources when no longer needed.
+- Avoid creating multiple duplicate subscriptions.
+- Preserve the last valid reading but label it stale when appropriate.
+- Never replace failed live data with invented normal readings.
+
+The app must work correctly when launched after the ESP32 has already been running for some time.
+
+---
+
+## 14. NETWORK CONFIGURATION
+
+Do not hardcode an obsolete laptop IP address as the only backend destination.
+
+Provide a clearly configurable backend base URL for local development.
+
+For local testing:
+- Use the laptop's current LAN IP address.
+- Ensure the FastAPI server listens on the appropriate interface.
+- Configure firewall access for the backend port.
+- Ensure the phone and laptop can reach each other over the network.
+- Use Android cleartext HTTP only for explicitly configured development endpoints if necessary.
+- Prefer HTTPS and appropriate authentication for production deployment.
+
+Do not assume that `localhost` on the phone points to the laptop.
+
+Do not expose the backend directly to the public internet without appropriate security.
+
+---
+
+## 15. TESTING AND ACCEPTANCE CRITERIA
+
+Add automated tests where practical and perform actual build verification.
+
+### Android build
+- Gradle sync succeeds.
+- Debug APK builds.
+- No unresolved dependencies.
+- No missing model files or resources.
+- No placeholder implementations silently presented as working features.
+
+### Hardware integration
+- App displays actual ESP32 telemetry.
+- Temperature, humidity, gas/smoke, flame, and device status update correctly.
+- Disconnected and stale states are handled.
+- Physical buzzer/relay status is not falsely claimed.
+- Simulation does not overwrite real hardware telemetry.
+
+### Graphs
+- Graphs use actual stored data.
+- Time ranges filter data correctly.
+- Threshold lines use configured values.
+- Empty history is handled honestly.
+
+### Camera
+- Camera permission flow works.
+- Live preview works.
+- Real model loads and detects people.
+- Polygon drawing and persistence work.
+- Intrusion detection is based on the actual polygon.
+- Entry alerts and cooldown reminders work.
+- Duplicate events are suppressed.
+- Stop Monitoring releases camera resources.
+- Background behavior is consistent with Android permissions and restrictions.
+
+### Incidents and notifications
+- A threshold crossing creates a persistent incident.
+- A sustained condition does not create a new incident every second.
+- Clearing and resolution are recorded.
+- FCM attempts and SMS attempts are separately recorded.
+- Provider errors do not erase incidents.
+- Invalid credentials produce a clear configuration error.
+- Retry behavior is bounded.
+- Incident history persists across app restarts.
+
+### Final report
+After implementation, report:
+1. Files inspected.
+2. Files created or modified.
+3. Existing APIs reused.
+4. New APIs and database migrations added.
+5. Dependencies added.
+6. Features genuinely implemented.
+7. Features requiring Firebase/provider credentials or physical hardware validation.
+8. Exact commands to run the backend.
+9. Exact Android Studio steps to build the APK.
+10. Known limitations and tests that remain incomplete.
+
+Do not report success for tests that were not executed.
+
+---
+
+## IMPLEMENTATION STRATEGY
+
+Work in stages rather than rewriting the whole project blindly:
+
+Stage 1: Inspect and summarize the current project and backend.
+
+Stage 2: Refactor the Android navigation and dashboard, and connect real telemetry.
+
+Stage 3: Implement history APIs, graphs, threshold configuration, and persistent incidents.
+
+Stage 4: Implement CameraX, the real person-detection model, polygon selection, and intrusion event reporting.
+
+Stage 5: Implement FCM and the configurable SMS provider.
+
+Stage 6: Test integrations, resolve build issues, and generate a debug APK.
+
+Preserve working code, existing data, and the existing backend architecture. If any requirement cannot be implemented with the current project or available credentials, explain the exact blocker and complete the remaining independent work.
+
+**The final deliverable must be a working, buildable extension of the existing SafePlant project—not just a UI redesign, a collection of code snippets, or a report claiming untested features are complete.**

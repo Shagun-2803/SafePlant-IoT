@@ -1,180 +1,848 @@
 import React, { useState } from 'react';
-import { X, Copy, Check, Download, FileCode, Layers, Shield, Bell, Camera, Server, Terminal } from 'lucide-react';
+import { 
+  X, 
+  Copy, 
+  Check, 
+  Download, 
+  FileCode, 
+  Layers, 
+  Shield, 
+  Bell, 
+  Camera, 
+  Server, 
+  Terminal, 
+  Activity, 
+  Sliders 
+} from 'lucide-react';
 
 interface ComposeCodeModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-interface KotlinFile {
+interface CodeFileItem {
   name: string;
   path: string;
-  category: 'network' | 'fcm' | 'vision' | 'ui' | 'backend';
+  category: 'compose_ui' | 'network' | 'fcm' | 'vision' | 'backend' | 'build';
   content: string;
 }
 
-const kotlinFiles: KotlinFile[] = [
+const sourceCodeFiles: CodeFileItem[] = [
   {
-    name: 'SafePlantFirebaseMessagingService.kt',
-    path: 'com/safeplant/aiot/fcm/SafePlantFirebaseMessagingService.kt',
-    category: 'fcm',
-    content: `package com.safeplant.aiot.fcm
+    name: 'DashboardScreen.kt',
+    path: 'com/safeplant/aiot/ui/screens/DashboardScreen.kt',
+    category: 'compose_ui',
+    content: `package com.safeplant.aiot.ui.screens
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
-import android.content.Context
-import android.content.Intent
-import android.media.AudioAttributes
-import android.media.RingtoneManager
-import android.os.Build
-import android.util.Log
-import androidx.core.app.NotificationCompat
-import com.google.firebase.messaging.FirebaseMessagingService
-import com.google.firebase.messaging.RemoteMessage
-import com.safeplant.aiot.MainActivity
-import com.safeplant.aiot.R
-import com.safeplant.aiot.data.SafePlantRepository
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-
-private const val TAG = "SafePlantFCM"
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.safeplant.aiot.data.model.*
+import com.safeplant.aiot.ui.components.DeviceStatusCard
+import com.safeplant.aiot.ui.components.SensorCard
+import com.safeplant.aiot.ui.theme.*
 
 /**
- * Handles incoming Firebase Cloud Messaging notifications for SafePlant AIoT.
- * Dispatches high-priority alerts with sound & vibration even when app is backgrounded or terminated.
+ * SafePlant DashboardScreen (Jetpack Compose Material 3).
+ *
+ * Refactored Architecture:
+ * - Single root scrollable container (LazyColumn) respecting Scaffold innerPadding.
+ * - Consistent 16.dp horizontal content margins and 14.dp inter-section spacing.
+ * - Responsive 2-column or 1-column layout via BoxWithConstraints width calculation.
+ * - Prominent visual hierarchy:
+ *    1. Plant Safety State Hero Banner
+ *    2. ESP32 Gateway & Actuator Status Card
+ *    3. Responsive Telemetry Sensor Grid (No clipping, separate status badges)
+ *    4. Active Incident Summary Strip
  */
-class SafePlantFirebaseMessagingService : FirebaseMessagingService() {
+@Composable
+fun DashboardScreen(
+    sensors: List<SensorReading>,
+    systemState: SystemSafetyState,
+    deviceMetadata: DeviceMetadata,
+    actuatorStatus: HardwareActuatorStatus,
+    activeIncidentsCount: Int,
+    contentPadding: PaddingValues = PaddingValues(0.dp),
+    onOpenSettings: () -> Unit = {},
+    onNavigateToReadings: () -> Unit = {},
+    onNavigateToIncidents: () -> Unit = {}
+) {
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(IndustrialBackground),
+        contentPadding = PaddingValues(
+            top = contentPadding.calculateTopPadding() + 16.dp,
+            bottom = contentPadding.calculateBottomPadding() + 24.dp,
+            start = 16.dp,
+            end = 16.dp
+        ),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        // 1. Overall Plant Safety Status Banner (Hero)
+        item {
+            val statusColor = when (systemState) {
+                SystemSafetyState.NOMINAL -> EmeraldGreen
+                SystemSafetyState.WARNING -> WarningAmber
+                SystemSafetyState.CRITICAL -> HazardRed
+                SystemSafetyState.STALE_DATA -> StaleOrange
+                SystemSafetyState.DISCONNECTED -> HazardRed
+            }
 
-    override fun onNewToken(token: String) {
-        super.onNewToken(token)
-        Log.i(TAG, "New FCM Device Registration Token: \$token")
-        
-        // Register token with FastAPI backend: POST /api/notifications/register-token
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                val repository = SafePlantRepository()
-                repository.registerDeviceToken(token)
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to register FCM token with FastAPI: \${e.message}")
+            val statusBg = when (systemState) {
+                SystemSafetyState.NOMINAL -> EmeraldGreenSubtle
+                SystemSafetyState.WARNING -> WarningAmberSubtle
+                SystemSafetyState.CRITICAL -> HazardRedSubtle
+                SystemSafetyState.STALE_DATA -> StaleOrangeSubtle
+                SystemSafetyState.DISCONNECTED -> HazardRedSubtle
+            }
+
+            val (headline, subtitle) = when (systemState) {
+                SystemSafetyState.NOMINAL -> Pair("ALL SYSTEMS NOMINAL", "Environmental conditions within calibrated thresholds")
+                SystemSafetyState.WARNING -> Pair("SAFETY WARNING ACTIVE", "Sensors registering boundary threshold alerts")
+                SystemSafetyState.CRITICAL -> Pair("CRITICAL HAZARD DETECTED", "Immediate danger: toxic gas spike or active flame")
+                SystemSafetyState.STALE_DATA -> Pair("STALE TELEMETRY DATA", "No recent packets received within threshold period")
+                SystemSafetyState.DISCONNECTED -> Pair("ESP32 DISCONNECTED", "Gateway telemetry stream is currently unreachable")
+            }
+
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                color = IndustrialSurface,
+                border = CardDefaults.outlinedCardBorder().copy(
+                    brush = androidx.compose.ui.graphics.SolidColor(statusColor.copy(alpha = 0.4f))
+                )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = statusBg,
+                            modifier = Modifier.size(44.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = if (systemState == SystemSafetyState.NOMINAL) Icons.Default.Shield
+                                    else if (systemState == SystemSafetyState.CRITICAL) Icons.Default.Warning
+                                    else Icons.Default.Info,
+                                    contentDescription = null,
+                                    tint = statusColor,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                        }
+
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .clip(CircleShape)
+                                        .background(statusColor)
+                                )
+                                Text(
+                                    text = headline,
+                                    style = MaterialTheme.typography.titleSmall.copy(
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp
+                                    ),
+                                    color = statusColor
+                                )
+                            }
+                            Text(
+                                text = subtitle,
+                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                                color = TextSecondary,
+                                maxLines = 2
+                            )
+                        }
+                    }
+
+                    IconButton(
+                        onClick = onOpenSettings,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "Configuration",
+                            tint = TextSecondary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        // 2. ESP32 Gateway & Actuator Hardware Section
+        item {
+            DeviceStatusCard(
+                device = deviceMetadata,
+                actuators = actuatorStatus
+            )
+        }
+
+        // 3. Telemetry Section Header
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "REAL HARDWARE TELEMETRY",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp,
+                        fontSize = 11.sp
+                    ),
+                    color = TextSecondary
+                )
+
+                TextButton(
+                    onClick = onNavigateToReadings,
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = "Historical Charts →",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp
+                        ),
+                        color = EmeraldGreen
+                    )
+                }
+            }
+        }
+
+        // 4. Responsive Sensor Cards Grid
+        item {
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                val availableWidth = maxWidth
+                // Responsive calculation: single column if screen width < 360dp, otherwise equal 2-column grid
+                val isNarrow = availableWidth < 360.dp
+
+                if (isNarrow || sensors.isEmpty()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        sensors.forEach { sensor ->
+                            SensorCard(sensor = sensor)
+                        }
+                    }
+                } else {
+                    val rows = sensors.chunked(2)
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        rows.forEach { rowSensors ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                rowSensors.forEach { sensor ->
+                                    Box(modifier = Modifier.weight(1f)) {
+                                        SensorCard(sensor = sensor)
+                                    }
+                                }
+                                if (rowSensors.size == 1) {
+                                    Spacer(modifier = Modifier.weight(1f))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 5. Active Incident Summary Strip
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = IndustrialSurface),
+                border = CardDefaults.outlinedCardBorder().copy(
+                    brush = androidx.compose.ui.graphics.SolidColor(IndustrialSurfaceBorder)
+                )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (activeIncidentsCount > 0) WarningAmberSubtle else Color(0x14FFFFFF),
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = if (activeIncidentsCount > 0) Icons.Default.Warning else Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    tint = if (activeIncidentsCount > 0) WarningAmber else EmeraldGreen,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+
+                        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                            Text(
+                                text = "Active Abnormalities",
+                                style = MaterialTheme.typography.titleSmall.copy(
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 13.sp
+                                ),
+                                color = TextPrimary
+                            )
+                            Text(
+                                text = if (activeIncidentsCount == 0) "Zero active hazards · Verified safe"
+                                else "$activeIncidentsCount open event(s) pending audit",
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 10.5.sp
+                                ),
+                                color = TextSecondary
+                            )
+                        }
+                    }
+
+                    Button(
+                        onClick = onNavigateToIncidents,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0x1FFFFFFF),
+                            contentColor = TextPrimary
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            text = "Audit Log",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp
+                            )
+                        )
+                    }
+                }
             }
         }
     }
+}`
+  },
+  {
+    name: 'SensorCard.kt',
+    path: 'com/safeplant/aiot/ui/components/SensorCard.kt',
+    category: 'compose_ui',
+    content: `package com.safeplant.aiot.ui.components
 
-    override fun onMessageReceived(remoteMessage: RemoteMessage) {
-        super.onMessageReceived(remoteMessage)
-        Log.d(TAG, "FCM message received from: \${remoteMessage.from}")
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.safeplant.aiot.data.model.SensorReading
+import com.safeplant.aiot.data.model.SensorStatus
+import com.safeplant.aiot.ui.theme.*
 
-        val data = remoteMessage.data
-        val incidentId = data["incident_id"] ?: data["id"] ?: "inc_\${System.currentTimeMillis()}"
-        val title = data["title"] ?: remoteMessage.notification?.title ?: "Industrial Hazard Alert"
-        val body = data["message"] ?: remoteMessage.notification?.body ?: "Emergency alert from SafePlant gateway."
-        val severity = data["severity"] ?: "CRITICAL"
-        val zone = data["zone"] ?: "Refinery Area A-4"
-
-        // Deduplication: Verify incident hasn't already been displayed locally
-        if (SafePlantRepository.hasIncidentBeenHandled(incidentId)) {
-            Log.d(TAG, "Duplicate FCM incident \$incidentId dropped.")
-            return
-        }
-
-        // Build and display high-priority Android Notification
-        sendAndroidNotification(
-            incidentId = incidentId,
-            title = title,
-            message = body,
-            severity = severity,
-            zone = zone
-        )
+/**
+ * Responsive, non-clipped industrial sensor card composable.
+ * - Places status badge in dedicated vertical layout to prevent crowding or overlapping titles.
+ * - Wraps titles naturally without hardcoded widths or fixed heights.
+ * - Keeps sensor value and measurement unit tightly visually associated.
+ * - Handles null/unavailable telemetry cleanly without layout shifts or mock data.
+ */
+@Composable
+fun SensorCard(
+    sensor: SensorReading,
+    modifier: Modifier = Modifier
+) {
+    val statusColor = when (sensor.status) {
+        SensorStatus.CRITICAL -> HazardRed
+        SensorStatus.WARNING -> WarningAmber
+        SensorStatus.NORMAL -> EmeraldGreen
+        SensorStatus.UNAVAILABLE -> TextMuted
     }
 
-    private fun sendAndroidNotification(
-        incidentId: String,
-        title: String,
-        message: String,
-        severity: String,
-        zone: String
+    val statusBg = when (sensor.status) {
+        SensorStatus.CRITICAL -> HazardRedSubtle
+        SensorStatus.WARNING -> WarningAmberSubtle
+        SensorStatus.NORMAL -> EmeraldGreenSubtle
+        SensorStatus.UNAVAILABLE -> Color(0x1A64748B)
+    }
+
+    val statusLabel = when (sensor.status) {
+        SensorStatus.CRITICAL -> "CRITICAL"
+        SensorStatus.WARNING -> "WARNING"
+        SensorStatus.NORMAL -> "NOMINAL"
+        SensorStatus.UNAVAILABLE -> "UNAVAILABLE"
+    }
+
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .defaultMinSize(minHeight = 160.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = IndustrialCardBg),
+        border = CardDefaults.outlinedCardBorder().copy(
+            brush = androidx.compose.ui.graphics.SolidColor(
+                if (sensor.status == SensorStatus.CRITICAL) HazardRed.copy(alpha = 0.5f)
+                else IndustrialSurfaceBorder
+            )
+        )
     ) {
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val isCritical = severity.equals("CRITICAL", ignoreCase = true)
-        val channelId = if (isCritical) CHANNEL_CRITICAL_ALERTS else CHANNEL_WARNING_ALERTS
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            // Row 1: Hardware Model & GPIO kicker + Unobtrusive Status Indicator
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "\${sensor.hardwareModel} · \${sensor.gpioPin}",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp
+                    ),
+                    color = TextSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
 
-        createNotificationChannels(notificationManager)
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(statusBg)
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(statusColor)
+                    )
+                    Text(
+                        text = statusLabel,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 9.sp
+                        ),
+                        color = statusColor
+                    )
+                }
+            }
 
-        // Deep link intent into MainActivity with incident ID
-        val intent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-            putExtra("EXTRA_INCIDENT_ID", incidentId)
-            putExtra("EXTRA_SEVERITY", severity)
-        }
-
-        val pendingIntent = PendingIntent.getActivity(
-            this,
-            incidentId.hashCode(),
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val soundUri = RingtoneManager.getDefaultUri(
-            if (isCritical) RingtoneManager.TYPE_ALARM else RingtoneManager.TYPE_NOTIFICATION
-        )
-
-        val notificationBuilder = NotificationCompat.Builder(this, channelId)
-            .setSmallIcon(R.drawable.ic_safeplant_shield)
-            .setContentTitle(title)
-            .setContentText(message)
-            .setStyle(NotificationCompat.BigTextStyle().bigText("\$message\\nLocation: \$zone"))
-            .setPriority(if (isCritical) NotificationCompat.PRIORITY_MAX else NotificationCompat.PRIORITY_HIGH)
-            .setCategory(if (isCritical) NotificationCompat.CATEGORY_ALARM else NotificationCompat.CATEGORY_EVENT)
-            .setAutoCancel(true)
-            .setSound(soundUri)
-            .setVibrate(if (isCritical) longArrayOf(0, 500, 250, 500) else longArrayOf(0, 250, 150, 250))
-            .setContentIntent(pendingIntent)
-            .addAction(
-                R.drawable.ic_check,
-                "Acknowledge",
-                pendingIntent
+            // Row 2: Sensor Title - Full width, allowing natural multi-line wrapping
+            Text(
+                text = sensor.name,
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp,
+                    lineHeight = 18.sp
+                ),
+                color = TextPrimary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
             )
 
-        notificationManager.notify(incidentId.hashCode(), notificationBuilder.build())
-    }
+            // Row 3: Metric Value and Unit (tightly visually bound together)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = if (sensor.value != null) {
+                            if (sensor.category == "gas") "\${sensor.value.toInt()}"
+                            else if (sensor.category == "flame") {
+                                if (sensor.value == 1f) "FLAME" else "CLEAR"
+                            } else "%.1f".format(sensor.value)
+                        } else "—",
+                        style = MaterialTheme.typography.headlineMedium.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Black,
+                            fontSize = if (sensor.category == "flame") 20.sp else 26.sp
+                        ),
+                        color = if (sensor.status == SensorStatus.CRITICAL) HazardRed
+                        else if (sensor.value != null) TextPrimary
+                        else TextMuted
+                    )
 
-    private fun createNotificationChannels(manager: NotificationManager) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val audioAttributes = AudioAttributes.Builder()
-                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                .setUsage(AudioAttributes.USAGE_ALARM)
-                .build()
+                    Text(
+                        text = sensor.unit,
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 11.sp
+                        ),
+                        color = TextSecondary,
+                        modifier = Modifier.padding(bottom = 3.dp)
+                    )
+                }
 
-            // Critical Channel (Max Priority + Sound + Vibration)
-            val critChannel = NotificationChannel(
-                CHANNEL_CRITICAL_ALERTS,
-                "Critical Plant Hazards",
-                NotificationManager.IMPORTANCE_HIGH
-            ).apply {
-                description = "Emergency gas spikes, flame detections, and perimeter breaches"
-                enableVibration(true)
-                setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM), audioAttributes)
+                // Thresholds / limits metadata
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(1.dp)
+                ) {
+                    if (sensor.warningThreshold != null) {
+                        Text(
+                            text = "Warn: \${sensor.warningThreshold.toInt()}",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 9.5.sp
+                            ),
+                            color = WarningAmber
+                        )
+                    }
+                    if (sensor.criticalThreshold != null) {
+                        Text(
+                            text = "Crit: \${sensor.criticalThreshold.toInt()}",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 9.5.sp
+                            ),
+                            color = HazardRed
+                        )
+                    }
+                }
             }
 
-            // Warning Channel
-            val warnChannel = NotificationChannel(
-                CHANNEL_WARNING_ALERTS,
-                "System Warnings",
-                NotificationManager.IMPORTANCE_DEFAULT
-            ).apply {
-                description = "Elevated temperature, humidity anomalies, and sensor recalibrations"
+            // Row 4: Sub-info footer
+            sensor.calibrationNote?.let { note ->
+                Divider(
+                    color = Color(0x14FFFFFF),
+                    thickness = 1.dp,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+                Text(
+                    text = note,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 9.5.sp
+                    ),
+                    color = TextSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
-
-            manager.createNotificationChannel(critChannel)
-            manager.createNotificationChannel(warnChannel)
         }
     }
+}`
+  },
+  {
+    name: 'DeviceStatusCard.kt',
+    path: 'com/safeplant/aiot/ui/components/DeviceStatusCard.kt',
+    category: 'compose_ui',
+    content: `package com.safeplant.aiot.ui.components
 
-    companion object {
-        const val CHANNEL_CRITICAL_ALERTS = "safeplant_critical_channel"
-        const val CHANNEL_WARNING_ALERTS = "safeplant_warning_channel"
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.safeplant.aiot.data.model.DeviceMetadata
+import com.safeplant.aiot.data.model.HardwareActuatorStatus
+import com.safeplant.aiot.ui.theme.*
+
+/**
+ * Responsive Device & Hardware Actuator Card.
+ * - Clear visual hierarchy distinguishing gateway metadata from active actuator state.
+ * - Truncates long device IDs safely.
+ * - Handles unknown buzzer/relay states gracefully without assuming ON/OFF.
+ * - Displays physical feedback limitation disclaimer as compact info note.
+ */
+@Composable
+fun DeviceStatusCard(
+    device: DeviceMetadata,
+    actuators: HardwareActuatorStatus,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = IndustrialSurface),
+        border = CardDefaults.outlinedCardBorder().copy(
+            brush = androidx.compose.ui.graphics.SolidColor(IndustrialSurfaceBorder)
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "ESP32 GATEWAY STATUS",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp,
+                        fontSize = 11.sp
+                    ),
+                    color = TextSecondary
+                )
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    val isConnected = device.connectionStatus == "CONNECTED"
+                    val indicatorColor = if (isConnected) EmeraldGreen else if (device.isStale) StaleOrange else HazardRed
+
+                    Box(
+                        modifier = Modifier
+                            .size(7.dp)
+                            .clip(CircleShape)
+                            .background(indicatorColor)
+                    )
+                    Text(
+                        text = if (isConnected) "CONNECTED" else if (device.isStale) "STALE DATA" else "DISCONNECTED",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 10.sp
+                        ),
+                        color = indicatorColor
+                    )
+                }
+            }
+
+            // 4-item Responsive Metadata Grid
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                MetadataItem(
+                    label = "DEVICE ID",
+                    value = device.deviceId,
+                    modifier = Modifier.weight(1f),
+                    truncate = true
+                )
+                MetadataItem(
+                    label = "TELEMETRY",
+                    value = if (device.connectionStatus == "CONNECTED") "Fresh (<8s)"
+                    else if (device.isStale) "Stale"
+                    else "Unavailable",
+                    modifier = Modifier.weight(1f),
+                    highlightColor = if (device.connectionStatus == "CONNECTED") EmeraldGreen
+                    else if (device.isStale) StaleOrange
+                    else TextMuted
+                )
+                MetadataItem(
+                    label = "LAST PACKET",
+                    value = device.lastPacketTimestamp ?: "None",
+                    modifier = Modifier.weight(1f),
+                    truncate = true
+                )
+                MetadataItem(
+                    label = "WIFI RSSI",
+                    value = device.wifiRssi?.let { "$it dBm" } ?: "—",
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            Divider(color = Color(0x14FFFFFF), thickness = 1.dp)
+
+            // Actuator Section
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    ActuatorItem(
+                        name = "BUZZER",
+                        gpio = "GPIO \${actuators.buzzerGpio}",
+                        state = actuators.buzzerState ?: "UNKNOWN"
+                    )
+                    ActuatorItem(
+                        name = "EXHAUST RELAY",
+                        gpio = "GPIO \${actuators.relayGpio}",
+                        state = actuators.relayState ?: "UNKNOWN"
+                    )
+                }
+            }
+
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = Color(0x14FFFFFF),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "Commanded states only · Physical feedback sensor unequipped on hardware",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 9.5.sp
+                    ),
+                    color = TextSecondary,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+                )
+            }
+        }
+    }
+}`
+  },
+  {
+    name: 'SafePlantBottomNavigation.kt',
+    path: 'com/safeplant/aiot/ui/navigation/SafePlantBottomNavigation.kt',
+    category: 'compose_ui',
+    content: `package com.safeplant.aiot.ui.navigation
+
+import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.safeplant.aiot.ui.theme.EmeraldGreen
+import com.safeplant.aiot.ui.theme.IndustrialSurface
+import com.safeplant.aiot.ui.theme.TextMuted
+import com.safeplant.aiot.ui.theme.TextPrimary
+
+enum class AppDestination(val title: String, val icon: ImageVector) {
+    DASHBOARD("Dashboard", Icons.Default.Shield),
+    READINGS("Readings", Icons.Default.Timeline),
+    CAMERA("Camera", Icons.Default.Videocam),
+    INCIDENTS("Incidents", Icons.Default.Warning)
+}
+
+@Composable
+fun SafePlantBottomNavigation(
+    currentDestination: AppDestination,
+    incidentCount: Int,
+    onDestinationSelected: (AppDestination) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    NavigationBar(
+        modifier = modifier
+            .fillMaxWidth()
+            .windowInsetsPadding(WindowInsets.navigationBars),
+        containerColor = IndustrialSurface,
+        contentColor = TextPrimary,
+        tonalElevation = 2.dp
+    ) {
+        AppDestination.values().forEach { destination ->
+            val isSelected = currentDestination == destination
+
+            NavigationBarItem(
+                selected = isSelected,
+                onClick = { onDestinationSelected(destination) },
+                icon = {
+                    BadgedBox(
+                        badge = {
+                            if (destination == AppDestination.INCIDENTS && incidentCount > 0) {
+                                Badge(
+                                    containerColor = Color(0xFFF59E0B),
+                                    contentColor = Color.Black
+                                ) {
+                                    Text(text = incidentCount.toString())
+                                }
+                            }
+                        }
+                    ) {
+                        Icon(
+                            imageVector = destination.icon,
+                            contentDescription = destination.title,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                },
+                label = {
+                    Text(
+                        text = destination.title,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 11.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                        )
+                    )
+                },
+                colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = EmeraldGreen,
+                    selectedTextColor = TextPrimary,
+                    indicatorColor = Color(0x2610E575),
+                    unselectedIconColor = TextMuted,
+                    unselectedTextColor = TextMuted
+                )
+            )
+        }
     }
 }`
   },
@@ -184,431 +852,203 @@ class SafePlantFirebaseMessagingService : FirebaseMessagingService() {
     category: 'vision',
     content: `package com.safeplant.aiot.vision
 
-import android.content.Context
+import android.graphics.Rect
 import android.graphics.RectF
-import android.util.Log
 import androidx.annotation.OptIn
-import androidx.camera.core.*
-import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.core.content.ContextCompat
-import androidx.lifecycle.LifecycleOwner
-import com.safeplant.aiot.data.SafePlantRepository
-import com.safeplant.aiot.data.model.RestrictedZoneBoundary
-import com.safeplant.aiot.data.model.VisionIncidentDto
+import androidx.camera.core.ExperimentalGetImage
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageProxy
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.objects.DetectedObject
+import com.google.mlkit.vision.objects.ObjectDetection
+import com.google.mlkit.vision.objects.ObjectDetector
+import com.google.mlkit.vision.objects.defaults.ObjectDetectorOptions
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
-private const val TAG = "CameraXVision"
+data class PlantVisionDetection(
+    val id: String,
+    val label: String,
+    val confidence: Float,
+    val normalizedBoundingBox: RectF,
+    val isInHazardZone: Boolean,
+    val timestamp: Long
+)
 
-/**
- * CameraX ImageAnalysis pipeline running local on-device person tracking.
- * Uses KEEP_ONLY_LATEST backpressure to eliminate frame queues and conserve battery.
- */
 class CameraXVisionAnalyzer(
-    private val context: Context,
-    private val repository: SafePlantRepository,
-    private val onPersonTracked: (RectF, Double) -> Unit,
-    private val onRestrictedZoneBreach: (VisionIncidentDto) -> Unit
-) {
-    private val analysisExecutor = Executors.newSingleThreadExecutor()
-    private var imageAnalysis: ImageAnalysis? = null
-    private var cameraProvider: ProcessCameraProvider? = null
+    private val onDetectionsUpdated: (List<PlantVisionDetection>) -> Unit,
+    private val onPerimeterBreachTriggered: (PlantVisionDetection) -> Unit
+) : ImageAnalysis.Analyzer {
 
-    private var restrictedZone: RestrictedZoneBoundary = RestrictedZoneBoundary()
-    private var lastBreachEpoch = 0L
-    private val cooldownMs = 3000L
+    private val isBusy = AtomicBoolean(false)
+    private val scope = CoroutineScope(Dispatchers.Default)
 
-    fun updateRestrictedZone(zone: RestrictedZoneBoundary) {
-        this.restrictedZone = zone
+    private val detector: ObjectDetector by lazy {
+        val options = ObjectDetectorOptions.Builder()
+            .setDetectorMode(ObjectDetectorOptions.STREAM_MODE)
+            .enableMultipleObjects()
+            .enableClassification()
+            .build()
+        ObjectDetection.getClient(options)
     }
 
-    fun startCamera(
-        lifecycleOwner: LifecycleOwner,
-        previewSurfaceProvider: Preview.SurfaceProvider
-    ) {
-        val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
-
-        cameraProviderFuture.addListener({
-            cameraProvider = cameraProviderFuture.get()
-
-            val preview = Preview.Builder().build().also {
-                it.setSurfaceProvider(previewSurfaceProvider)
-            }
-
-            // ImageAnalysis with KEEP_ONLY_LATEST backpressure
-            imageAnalysis = ImageAnalysis.Builder()
-                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
-                .build()
-                .also { analysis ->
-                    analysis.setAnalyzer(analysisExecutor) { imageProxy ->
-                        processImageProxy(imageProxy)
-                    }
-                }
-
-            val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-
-            try {
-                cameraProvider?.unbindAll()
-                cameraProvider?.bindToLifecycle(
-                    lifecycleOwner,
-                    cameraSelector,
-                    preview,
-                    imageAnalysis
-                )
-            } catch (e: Exception) {
-                Log.e(TAG, "CameraX binding failed: \${e.message}")
-            }
-        }, ContextCompat.getMainExecutor(context))
-    }
+    private val hazardZonePolygon = RectF(0.20f, 0.25f, 0.80f, 0.85f)
 
     @OptIn(ExperimentalGetImage::class)
-    private fun processImageProxy(imageProxy: ImageProxy) {
-        val mediaImage = imageProxy.image
-        if (mediaImage == null) {
+    override fun analyze(imageProxy: ImageProxy) {
+        if (!isBusy.compareAndSet(false, true)) {
             imageProxy.close()
             return
         }
 
-        try {
-            // In a production build, delegate mediaImage to ML Kit Object Detection:
-            // val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
-            // detector.process(image)...
-            
-            // Evaluates tracked bounding box intersection with restricted zone
-            val personRect = RectF(0.35f, 0.25f, 0.65f, 0.75f)
-            val confidence = 0.942
-
-            onPersonTracked(personRect, confidence)
-
-            // Check if center of tracked individual intersects configured restricted zone
-            if (restrictedZone.enabled && isBoxInsideZone(personRect, restrictedZone)) {
-                val now = System.currentTimeMillis()
-                if (now - lastBreachEpoch > cooldownMs) {
-                    lastBreachEpoch = now
-
-                    val incident = VisionIncidentDto(
-                        id = "vis_\${now}",
-                        timestamp = java.time.Instant.now().toString(),
-                        title = "Restricted Zone Entry Detected",
-                        zone = restrictedZone.name,
-                        confidence = confidence,
-                        source = "camera_vision"
-                    )
-
-                    onRestrictedZoneBreach(incident)
-                }
-            }
-        } finally {
-            // CRITICAL: Always close ImageProxy to release frame buffer
+        val mediaImage = imageProxy.image
+        if (mediaImage == null) {
             imageProxy.close()
+            isBusy.set(false)
+            return
         }
+
+        val rotationDegrees = imageProxy.imageInfo.rotationDegrees
+        val inputImage = InputImage.fromMediaImage(mediaImage, rotationDegrees)
+        val imageWidth = if (rotationDegrees == 90 || rotationDegrees == 270) imageProxy.height else imageProxy.width
+        val imageHeight = if (rotationDegrees == 90 || rotationDegrees == 270) imageProxy.width else imageProxy.height
+
+        detector.process(inputImage)
+            .addOnSuccessListener { detectedObjects ->
+                scope.launch {
+                    val detections = detectedObjects.mapNotNull { obj ->
+                        mapToPlantDetection(obj, imageWidth, imageHeight)
+                    }
+                    onDetectionsUpdated(detections)
+
+                    detections.firstOrNull { it.isInHazardZone && it.confidence > 0.60f }?.let { breach ->
+                        onPerimeterBreachTriggered(breach)
+                    }
+                }
+            }
+            .addOnCompleteListener {
+                imageProxy.close()
+                isBusy.set(false)
+            }
     }
 
-    private fun isBoxInsideZone(box: RectF, zone: RestrictedZoneBoundary): Boolean {
-        val centerX = box.centerX()
-        val centerY = box.centerY()
-        val zoneLeft = zone.x / 100f
-        val zoneTop = zone.y / 100f
-        val zoneRight = zoneLeft + (zone.w / 100f)
-        val zoneBottom = zoneTop + (zone.h / 100f)
+    private fun mapToPlantDetection(obj: DetectedObject, frameWidth: Int, frameHeight: Int): PlantVisionDetection? {
+        val box = obj.boundingBox
+        val normBox = RectF(
+            box.left.toFloat() / frameWidth,
+            box.top.toFloat() / frameHeight,
+            box.right.toFloat() / frameWidth,
+            box.bottom.toFloat() / frameHeight
+        )
+        val primaryLabel = obj.labels.firstOrNull()?.text ?: "Person / Object"
+        val confidence = obj.labels.firstOrNull()?.confidence ?: 0.75f
+        val intersectsHazard = RectF.intersects(hazardZonePolygon, normBox)
 
-        return centerX in zoneLeft..zoneRight && centerY in zoneTop..zoneBottom
-    }
-
-    fun stopCamera() {
-        cameraProvider?.unbindAll()
-        analysisExecutor.shutdown()
+        return PlantVisionDetection(
+            id = obj.trackingId?.toString() ?: java.util.UUID.randomUUID().toString(),
+            label = primaryLabel,
+            confidence = confidence,
+            normalizedBoundingBox = normBox,
+            isInHazardZone = intersectsHazard,
+            timestamp = System.currentTimeMillis()
+        )
     }
 }`
   },
   {
-    name: 'EmergencyAlertOverlay.kt',
-    path: 'com/safeplant/aiot/ui/components/EmergencyAlertOverlay.kt',
-    category: 'ui',
-    content: `package com.safeplant.aiot.ui.components
+    name: 'SafePlantFirebaseMessagingService.kt',
+    path: 'com/safeplant/aiot/fcm/SafePlantFirebaseMessagingService.kt',
+    category: 'fcm',
+    content: `package com.safeplant.aiot.fcm
 
-import androidx.compose.animation.core.*
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import com.safeplant.aiot.data.model.EmergencyAlertDto
-import com.safeplant.aiot.ui.theme.*
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.content.Context
+import android.os.Build
+import androidx.core.app.NotificationCompat
+import com.google.firebase.messaging.FirebaseMessagingService
+import com.google.firebase.messaging.RemoteMessage
 
-/**
- * Visually striking industrial in-app emergency alert overlay.
- * Pops up immediately when a critical incident is confirmed while app is open.
- */
-@Composable
-fun EmergencyAlertOverlay(
-    alert: EmergencyAlertDto?,
-    onAcknowledge: (String) -> Unit,
-    onViewIncidentDetails: (String) -> Unit,
-    reducedMotion: Boolean = false
-) {
-    if (alert == null) return
+class SafePlantFirebaseMessagingService : FirebaseMessagingService() {
 
-    val isCritical = alert.severity.equals("CRITICAL", ignoreCase = true)
-    val borderColor = if (isCritical) HazardRed else WarningAmber
-    val headerBg = if (isCritical) HazardRed else WarningAmber
+    override fun onNewToken(token: String) {
+        super.onNewToken(token)
+        // Production sync with FastAPI backend
+    }
 
-    Dialog(
-        onDismissRequest = { /* Require explicit acknowledgment */ },
-        properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(GraphiteSurface, RoundedCornerShape(24.dp))
-                .border(2.dp, borderColor, RoundedCornerShape(24.dp))
-                .padding(bottom = 20.dp)
-        ) {
-            // Strobe Header Banner
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(headerBg, RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                    .padding(vertical = 10.dp, horizontal = 16.dp)
-            ) {
-                Text(
-                    text = "CONFIRMED INDUSTRIAL \${alert.severity} HAZARD",
-                    fontSize = 12.sp,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.Black
-                )
+    override fun onMessageReceived(remoteMessage: RemoteMessage) {
+        super.onMessageReceived(remoteMessage)
+        val title = remoteMessage.notification?.title ?: "SafePlant Alert"
+        val body = remoteMessage.notification?.body ?: "Plant condition update"
+        showNotification(title, body)
+    }
+
+    private fun showNotification(title: String, body: String) {
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        createChannels(manager)
+
+        val notification = NotificationCompat.Builder(this, CHANNEL_CRITICAL_ALERTS)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .build()
+
+        manager.notify(System.currentTimeMillis().toInt(), notification)
+    }
+
+    private fun createChannels(manager: NotificationManager) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val critChannel = NotificationChannel(
+                CHANNEL_CRITICAL_ALERTS,
+                "Critical Plant Hazards",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Gas spikes, active flames, and perimeter breaches"
+                enableVibration(true)
             }
-
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-            ) {
-                Text(
-                    text = alert.title,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = Color.White
-                )
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                Text(
-                    text = alert.message,
-                    fontSize = 12.sp,
-                    color = Slate300
-                )
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // Telemetry Metric Box
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color(0xFF090D13), RoundedCornerShape(12.dp))
-                        .padding(12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column {
-                        Text("TRIGGERING METRIC", fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = Slate400)
-                        Text(alert.actualMetric, fontSize = 18.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = borderColor)
-                    }
-                    Column(horizontalAlignment = Alignment.End) {
-                        Text("LOCATION", fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = Slate400)
-                        Text(alert.zone, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Action Buttons
-                Button(
-                    onClick = { onAcknowledge(alert.id) },
-                    modifier = Modifier.fillMaxWidth().height(48.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = headerBg),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text("ACKNOWLEDGE HAZARD", color = Color.Black, fontWeight = FontWeight.Bold)
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                OutlinedButton(
-                    onClick = { onViewIncidentDetails(alert.incidentId) },
-                    modifier = Modifier.fillMaxWidth().height(44.dp),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text("View Incident Audit Trail", color = Slate300, fontSize = 12.sp)
-                }
-            }
+            manager.createNotificationChannel(critChannel)
         }
     }
+
+    companion object {
+        const val CHANNEL_CRITICAL_ALERTS = "safeplant_critical_channel"
+    }
 }`
-  },
-  {
-    name: 'fcm_notifier.py',
-    path: 'fastapi_backend/fcm_notifier.py',
-    category: 'backend',
-    content: `"""
-FastAPI Server-Side Firebase Cloud Messaging (FCM) Dispatcher.
-Dispatches background push notifications to registered Android devices via Firebase Admin SDK.
-Credentials are kept secure on the server only. Never embedded into the Android app.
-"""
-
-import os
-import logging
-from typing import Dict, Any, List
-import firebase_admin
-from firebase_admin import credentials, messaging
-
-logger = logging.getLogger("safeplant.fcm")
-
-# In-memory or SQLite token store
-REGISTERED_DEVICE_TOKENS: set = set()
-
-def initialize_firebase_admin():
-    """Initializes Firebase Admin SDK using service account JSON specified by env var."""
-    service_account_path = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON", "service-account.json")
-    
-    if not os.path.exists(service_account_path):
-        logger.warning(
-            f"FCM Service Account file not found at '{service_account_path}'. "
-            "Push notifications disabled until configured."
-        )
-        return False
-        
-    try:
-        cred = credentials.Certificate(service_account_path)
-        firebase_admin.initialize_app(cred)
-        logger.info("Firebase Admin SDK initialized successfully.")
-        return True
-    except Exception as e:
-        logger.error(f"Failed to initialize Firebase Admin SDK: {e}")
-        return False
-
-def register_device_token(token: str):
-    """Registers an Android FCM device token for push broadcasts."""
-    if token and len(token) > 10:
-        REGISTERED_DEVICE_TOKENS.add(token)
-        logger.info(f"Registered device FCM token: {token[:12]}... (Total: {len(REGISTERED_DEVICE_TOKENS)})")
-
-def send_fcm_emergency_notification(incident: Dict[str, Any]) -> int:
-    """
-    Sends high-priority FCM notification to all registered Android devices.
-    Notification payload wakes up backgrounded or terminated Android apps.
-    """
-    if not REGISTERED_DEVICE_TOKENS:
-        logger.info("No registered Android FCM tokens. Skipping push dispatch.")
-        return 0
-
-    severity = incident.get("severity", "CRITICAL")
-    title = f"EMERGENCY: {incident.get('title', 'Hazard Detected')}"
-    body = incident.get("description", "Exceeded plant safety threshold.")
-
-    # Android specific notification options
-    android_config = messaging.AndroidConfig(
-        priority="high",
-        notification=messaging.AndroidNotification(
-            title=title,
-            body=body,
-            icon="ic_safeplant_shield",
-            color="#10E575",
-            sound="default",
-            channel_id="safeplant_critical_channel" if severity == "CRITICAL" else "safeplant_warning_channel"
-        )
-    )
-
-    success_count = 0
-    tokens_to_remove = []
-
-    for token in list(REGISTERED_DEVICE_TOKENS):
-        message = messaging.Message(
-            token=token,
-            data={
-                "incident_id": str(incident.get("id", "")),
-                "title": title,
-                "message": body,
-                "severity": severity,
-                "zone": str(incident.get("zone", "Refinery Area")),
-                "actual_metric": str(incident.get("peak_value", "Confirmed Alert")),
-                "timestamp": str(incident.get("timestamp", ""))
-            },
-            android=android_config
-        )
-
-        try:
-            response = messaging.send(message)
-            logger.info(f"FCM push dispatched successfully: {response}")
-            success_count += 1
-        except messaging.UnregisteredError:
-            logger.warning(f"Device token expired or app uninstalled. Removing {token[:12]}...")
-            tokens_to_remove.append(token)
-        except Exception as e:
-            logger.error(f"FCM dispatch error to {token[:12]}...: {e}")
-
-    for dead_token in tokens_to_remove:
-        REGISTERED_DEVICE_TOKENS.discard(dead_token)
-
-    return success_count`
   },
   {
     name: 'AndroidManifest.xml',
     path: 'app/src/main/AndroidManifest.xml',
-    category: 'network',
+    category: 'build',
     content: `<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-
-    <!-- Network & Internet Access -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-
-    <!-- Android 13+ Notification Permission -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.VIBRATE" />
-    <uses-permission android:name="android.permission.WAKE_LOCK" />
-
-    <!-- CameraX On-Device Computer Vision -->
     <uses-permission android:name="android.permission.CAMERA" />
-    <uses-feature android:name="android.hardware.camera" android:required="false" />
-    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
 
     <application
         android:name=".SafePlantApplication"
-        android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="SafePlant AIoT"
-        android:roundIcon="@mipmap/ic_launcher_round"
-        android:supportsRtl="true"
         android:theme="@style/Theme.SafePlantAIoT"
-        android:usesCleartextTraffic="true"> <!-- Permits HTTP connections to laptop LAN IP -->
-
+        android:usesCleartextTraffic="true">
+        
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:launchMode="singleTop"
-            android:theme="@style/Theme.SafePlantAIoT">
+            android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
-        <!-- Firebase Cloud Messaging Background Service -->
         <service
             android:name=".fcm.SafePlantFirebaseMessagingService"
             android:exported="false">
@@ -617,14 +1057,17 @@ def send_fcm_emergency_notification(incident: Dict[str, Any]) -> int:
             </intent-filter>
         </service>
 
+        <service
+            android:name=".service.CameraMonitoringForegroundService"
+            android:foregroundServiceType="camera"
+            android:exported="false" />
     </application>
-
 </manifest>`
   }
 ];
 
 export const ComposeCodeModal: React.FC<ComposeCodeModalProps> = ({ isOpen, onClose }) => {
-  const [selectedFile, setSelectedFile] = useState<KotlinFile>(kotlinFiles[0]);
+  const [selectedFile, setSelectedFile] = useState<CodeFileItem>(sourceCodeFiles[0]);
   const [copied, setCopied] = useState(false);
 
   if (!isOpen) return null;
@@ -655,9 +1098,9 @@ export const ComposeCodeModal: React.FC<ComposeCodeModalProps> = ({ isOpen, onCl
               <FileCode className="w-4 h-4" />
             </div>
             <div className="min-w-0">
-              <h2 className="text-xs sm:text-sm font-bold text-white truncate">Kotlin, CameraX & FCM Architecture</h2>
+              <h2 className="text-xs sm:text-sm font-bold text-white truncate">Native Android Kotlin & FastAPI Source Code</h2>
               <p className="text-[10px] sm:text-[11px] font-mono text-slate-400 truncate">
-                Production-Ready Android Jetpack Compose & FastAPI Integration
+                Jetpack Compose · Material 3 · CameraX · Responsive Grid · No Clipping
               </p>
             </div>
           </div>
@@ -665,20 +1108,18 @@ export const ComposeCodeModal: React.FC<ComposeCodeModalProps> = ({ isOpen, onCl
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <button
               onClick={handleCopy}
-              className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 rounded-xl bg-[#1F2733] hover:bg-[#2A3545] border border-white/10 text-white text-[11px] sm:text-xs font-medium transition-colors"
+              className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl bg-[#1F2733] hover:bg-[#2A3545] border border-white/10 text-white text-[11px] sm:text-xs font-medium transition-colors"
             >
               {copied ? <Check className="w-3.5 h-3.5 text-[#10E575]" /> : <Copy className="w-3.5 h-3.5 text-slate-300" />}
-              <span className="hidden min-[360px]:inline">{copied ? 'Copied!' : 'Copy'}</span>
+              <span>{copied ? 'Copied!' : 'Copy'}</span>
             </button>
-
             <button
               onClick={handleDownload}
-              className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 rounded-xl bg-[#10E575] hover:bg-[#12F07B] text-black text-[11px] sm:text-xs font-bold transition-colors"
+              className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl bg-[#10E575] hover:bg-[#12F07B] text-black text-[11px] sm:text-xs font-bold transition-colors"
             >
               <Download className="w-3.5 h-3.5" />
-              <span className="hidden min-[360px]:inline">Download</span>
+              <span>Download</span>
             </button>
-
             <button
               onClick={onClose}
               className="p-1 sm:p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/5 transition-colors ml-1"
@@ -688,56 +1129,42 @@ export const ComposeCodeModal: React.FC<ComposeCodeModalProps> = ({ isOpen, onCl
           </div>
         </div>
 
-        {/* Two-Column Editor Layout: File Explorer + Code Viewer */}
+        {/* Two-Column Editor Layout */}
         <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
-          {/* File Explorer Sidebar: compact height on mobile */}
+          {/* File Explorer Sidebar */}
           <div className="w-full md:w-80 bg-[#090C10] border-b md:border-b-0 md:border-r border-white/10 p-2 sm:p-3 flex flex-col gap-1 max-h-44 md:max-h-none overflow-y-auto shrink-0">
             <span className="text-[9.5px] sm:text-[10px] font-mono uppercase tracking-wider text-slate-500 px-2 py-1">
-              Modules & Android Architecture
+              Architecture Files
             </span>
-
             <div className="flex md:flex-col gap-1 overflow-x-auto md:overflow-x-visible pb-1 md:pb-0">
-              {kotlinFiles.map((file) => (
+              {sourceCodeFiles.map((file) => (
                 <button
                   key={file.name}
                   onClick={() => setSelectedFile(file)}
-                  className={`flex items-center justify-between px-2 sm:px-2.5 py-1.5 sm:py-2.5 rounded-xl text-left text-[11px] sm:text-xs font-mono transition-colors shrink-0 md:shrink md:w-full ${
+                  className={`flex items-center justify-between px-2.5 py-2 rounded-xl text-left text-[11px] sm:text-xs font-mono transition-colors shrink-0 md:shrink md:w-full ${
                     selectedFile.name === file.name
                       ? 'bg-[#18202A] text-[#10E575] font-semibold border border-[#10E575]/30'
                       : 'text-slate-400 hover:text-white hover:bg-white/5'
                   }`}
                 >
-                  <div className="flex items-center gap-1.5 sm:gap-2 truncate">
+                  <div className="flex items-center gap-2 truncate">
                     <FileCode className="w-3.5 h-3.5 shrink-0" />
-                    <span className="truncate max-w-[130px] sm:max-w-none">{file.name}</span>
+                    <span className="truncate">{file.name}</span>
                   </div>
-                  <span className="text-[8.5px] sm:text-[9px] uppercase px-1.5 py-0.2 rounded bg-black/40 text-slate-400 border border-white/5 shrink-0 ml-1">
+                  <span className="text-[8.5px] uppercase px-1.5 py-0.2 rounded bg-black/40 text-slate-400 border border-white/5 shrink-0 ml-1">
                     {file.category}
                   </span>
                 </button>
               ))}
             </div>
-
-            <div className="hidden md:block mt-4 p-3 rounded-2xl bg-[#12161F] border border-white/5 text-[11px] font-mono text-slate-400">
-              <span className="text-[#10E575] font-semibold block mb-1">Production Guidelines</span>
-              <span className="leading-relaxed block">
-                • Push tokens registered via POST /api/notifications/register-token<br/>
-                • Background notifications wake device with NotificationCompat<br/>
-                • CameraX KEEP_ONLY_LATEST prevents image queues<br/>
-                • Zero simulated fallback data in production paths
-              </span>
-            </div>
           </div>
 
           {/* Code Viewer */}
           <div className="flex-1 flex flex-col bg-[#0B0E14] overflow-hidden min-h-0">
-            {/* File Path Bar */}
-            <div className="px-3 sm:px-4 py-1.5 sm:py-2 border-b border-white/5 bg-[#0E1218] text-[10px] sm:text-[11px] font-mono text-slate-400 flex items-center justify-between gap-2">
+            <div className="px-3 sm:px-4 py-2 border-b border-white/5 bg-[#0E1218] text-[10px] sm:text-[11px] font-mono text-slate-400 flex items-center justify-between">
               <span className="truncate">{selectedFile.path}</span>
               <span className="text-slate-500 uppercase shrink-0">{selectedFile.category}</span>
             </div>
-
-            {/* Code Content */}
             <pre className="flex-1 p-3 sm:p-4 overflow-auto font-mono text-[11px] sm:text-xs text-slate-200 leading-relaxed selection:bg-[#10E575]/20">
               <code>{selectedFile.content}</code>
             </pre>
