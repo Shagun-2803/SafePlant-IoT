@@ -1,0 +1,11 @@
+[
+  "backend/tests/test_api.py::test_ai_camerax_intrusion_event",
+  "backend/tests/test_api.py::test_flame_detection_triggers_critical_incident_and_buzzer",
+  "backend/tests/test_api.py::test_gas_spike_triggers_incident_and_actuators",
+  "backend/tests/test_api.py::test_health_endpoint",
+  "backend/tests/test_api.py::test_incident_acknowledge_and_resolve_lifecycle",
+  "backend/tests/test_api.py::test_settings_validation",
+  "backend/tests/test_api.py::test_status_initial_disconnected",
+  "backend/tests/test_api.py::test_telemetry_ingest_and_latest",
+  "backend/tests/test_api.py::test_telemetry_latest_empty_404"
+]
