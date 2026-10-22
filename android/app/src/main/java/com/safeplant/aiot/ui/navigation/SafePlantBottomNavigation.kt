@@ -22,7 +22,8 @@ enum class AppDestination(val title: String, val icon: ImageVector) {
     DASHBOARD("Dashboard", Icons.Default.Shield),
     READINGS("Readings", Icons.Default.Timeline),
     CAMERA("Camera", Icons.Default.Videocam),
-    INCIDENTS("Incidents", Icons.Default.Warning)
+    INCIDENTS("Incidents", Icons.Default.Warning),
+    SETTINGS("Settings", Icons.Default.Settings)
 }
 
 /**
