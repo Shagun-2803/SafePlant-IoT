@@ -90,5 +90,20 @@ class SafePlantNotificationManager(private val context: Context) {
     companion object {
         const val CHANNEL_CRITICAL = "safeplant_critical_channel"
         const val CHANNEL_WARNING = "safeplant_warning_channel"
+
+        @Volatile
+        private var instance: SafePlantNotificationManager? = null
+
+        fun getInstance(context: Context): SafePlantNotificationManager {
+            return instance ?: synchronized(this) {
+                instance ?: SafePlantNotificationManager(context.applicationContext).also {
+                    instance = it
+                }
+            }
+        }
+
+        fun initChannels(context: Context) {
+            getInstance(context)
+        }
     }
 }

@@ -91,13 +91,15 @@ async def ingest_ai_event(event: AiEventPayload):
         "critical" if event.people_count > 0 else "low",
         "open",
         "camera_intrusion",
-        "android-camerax-device",
+        event.source or "android_camera",
         f"{event.people_count} person(s) ({int(event.confidence * 100)}% conf)",
         "0 persons in restricted zone",
         json.dumps({
             "polygon_id": event.polygon_id,
             "people_count": event.people_count,
-            "confidence": event.confidence
+            "confidence": event.confidence,
+            "source": event.source or "android_camera",
+            "is_hardware": bool(event.is_hardware)
         }),
         json.dumps([])
     ))

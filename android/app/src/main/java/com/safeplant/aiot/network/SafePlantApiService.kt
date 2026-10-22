@@ -1,8 +1,13 @@
 package com.safeplant.aiot.network
 
 import com.safeplant.aiot.data.model.*
+import okhttp3.OkHttpClient
+import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Response
+import retrofit2.Retrofit
+import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.*
+import java.util.concurrent.TimeUnit
 
 data class HealthResponse(
     val status: String,
@@ -46,7 +51,7 @@ data class ResolveDto(val notes: String = "Inspected and resolved.")
 
 interface SafePlantApiService {
     @GET("api/health")
-    async suspend fun getHealth(): Response<HealthResponse>
+    suspend fun getHealth(): Response<HealthResponse>
 
     @GET("api/status")
     suspend fun getStatus(): Response<BackendStatusDto>
@@ -95,4 +100,31 @@ interface SafePlantApiService {
     suspend fun reportAiEvent(
         @Body event: Map<String, Any>
     ): Response<Map<String, Any>>
+
+    @GET("api/ai/events")
+    suspend fun getAiEvents(): Response<List<Map<String, Any>>>
+
+    @GET("api/ai/status")
+    suspend fun getAiStatus(): Response<Map<String, Any>>
+
+    companion object {
+        fun create(baseUrl: String = "http://10.0.2.2:8000/"): SafePlantApiService {
+            val logging = HttpLoggingInterceptor().apply {
+                level = HttpLoggingInterceptor.Level.BODY
+            }
+            val client = OkHttpClient.Builder()
+                .addInterceptor(logging)
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .readTimeout(15, TimeUnit.SECONDS)
+                .build()
+
+            val normalizedUrl = if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/"
+            return Retrofit.Builder()
+                .baseUrl(normalizedUrl)
+                .client(client)
+                .addConverterFactory(GsonConverterFactory.create())
+                .build()
+                .create(SafePlantApiService::class.java)
+        }
+    }
 }

@@ -138,7 +138,7 @@ class MainActivity : ComponentActivity() {
                     bottomBar = {
                         SafePlantBottomNavigation(
                             currentDestination = currentDestination,
-                            incidentCount = incidents.count { it.status == "OPEN" },
+                            incidentCount = incidents.count { it.status.equals("open", ignoreCase = true) },
                             onDestinationSelected = { currentDestination = it }
                         )
                     }
@@ -150,7 +150,7 @@ class MainActivity : ComponentActivity() {
                                 systemState = systemState,
                                 deviceMetadata = deviceMetadata,
                                 actuatorStatus = actuatorStatus,
-                                activeIncidentsCount = incidents.count { it.status == "OPEN" },
+                                activeIncidentsCount = incidents.count { it.status.equals("open", ignoreCase = true) },
                                 contentPadding = innerPadding
                             )
                         }
@@ -163,14 +163,14 @@ class MainActivity : ComponentActivity() {
                             CameraVisionScreen(
                                 onIntrusionDetected = { conf, zone ->
                                     val newInc = IncidentRecord(
-                                        id = (100..999).random(),
+                                        id = (100..999).random().toString(),
+                                        title = "Restricted Perimeter Breach — $zone",
+                                        severity = "critical",
                                         timestamp = Instant.now().toString(),
-                                        type = "INTRUSION_DETECTED",
-                                        severity = "CRITICAL",
-                                        status = "OPEN",
-                                        sensorName = "Camera Edge Vision",
-                                        readingValue = "${(conf * 100).toInt()}% conf",
-                                        message = "Person detected inside $zone"
+                                        status = "open",
+                                        description = "Person detected inside $zone (${(conf * 100).toInt()}% conf)",
+                                        triggeringValue = "${(conf * 100).toInt()}% conf",
+                                        thresholdValue = "0 persons in restricted zone"
                                     )
                                     incidents = listOf(newInc) + incidents
                                 },
@@ -182,15 +182,15 @@ class MainActivity : ComponentActivity() {
                                 incidents = incidents,
                                 onAcknowledge = { incId ->
                                     incidents = incidents.map {
-                                        if (it.id == incId) it.copy(status = "ACKNOWLEDGED") else it
+                                        if (it.id == incId) it.copy(status = "acknowledged", acknowledged = true, acknowledgedBy = "Safety Officer", acknowledgedAt = Instant.now().toString()) else it
                                     }
                                 },
                                 onResolve = { incId, note ->
                                     incidents = incidents.map {
-                                        if (it.id == incId) it.copy(status = "RESOLVED", resolutionNotes = note) else it
+                                        if (it.id == incId) it.copy(status = "resolved", resolved = true, resolutionNotes = note) else it
                                     }
                                 },
-                                modifier = Modifier.padding(innerPadding)
+                                contentPadding = innerPadding
                             )
                         }
                         AppDestination.SETTINGS -> {

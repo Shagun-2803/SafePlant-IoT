@@ -1,15 +1,28 @@
 package com.safeplant.aiot.ui.screens
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
+import android.util.Log
+import android.view.ViewGroup
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -20,30 +33,45 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import com.safeplant.aiot.data.SafePlantRepository
+import com.safeplant.aiot.data.model.DetectedPerson
+import com.safeplant.aiot.notification.NotificationHelper
+import com.safeplant.aiot.vision.PersonDetectorAnalyzer
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import java.time.Instant
+import java.util.concurrent.Executors
+
+private const val TAG = "CameraVisionScreen"
 
 /**
  * CameraVisionScreen
- * Provides Android CameraX optical monitoring with ML Kit on-device person detection.
- * Evaluates whether detected person bounding boxes intersect a user-defined restricted polygon.
- * Dispatches rate-limited intrusion incidents to the SafePlant backend.
- *
- * NOTE: Detects the presence and posture of human persons; does NOT perform biometric identity recognition.
+ * Provides live CameraX optical perimeter monitoring with ML Kit on-device person detection.
+ * Automatically evaluates whether detected persons enter a user-defined restricted zone.
+ * Automatically fires asynchronous backend events to /api/ai/events and posts system notifications
+ * via NotificationHelper, with consecutive-frame confirmation and hysteresis re-arming.
  */
 @Composable
 fun CameraVisionScreen(
     onIntrusionDetected: (Float, String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    repository: SafePlantRepository = remember { SafePlantRepository.getInstance() }
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
     var hasCameraPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(
@@ -60,32 +88,99 @@ fun CameraVisionScreen(
         }
     )
 
-    var isMonitoringActive by remember { mutableStateOf(false) }
-    var detectedPersonsCount by remember { mutableIntStateOf(0) }
+    // State for monitoring and real-time detection
+    var isMonitoringActive by remember { mutableStateOf(true) }
+    var detectedPersons by remember { mutableStateOf<List<DetectedPerson>>(emptyList()) }
     var intrusionAlarmActive by remember { mutableStateOf(false) }
+    var intrudersInZoneCount by remember { mutableIntStateOf(0) }
+    var confidenceThreshold by remember { mutableFloatStateOf(0.60f) }
     var lastAlertTimestamp by remember { mutableLongStateOf(0L) }
-    val alertCooldownMs = 15000L // 15 seconds cooldown
+    var lastEventMessage by remember { mutableStateOf("No intrusions detected. Perimeter secure.") }
 
-    // User-configured restricted boundary (normalized 0f..1f coordinates)
-    var restrictedZone by remember {
-        mutableStateOf(
-            Rect(
-                left = 0.20f,
-                top = 0.25f,
-                right = 0.80f,
-                bottom = 0.75f
-            )
+    // User-configured restricted boundary (normalized 0f..1f coordinates: zoneX, zoneY, zoneW, zoneH)
+    var zoneX by remember { mutableFloatStateOf(0.20f) }
+    var zoneY by remember { mutableFloatStateOf(0.25f) }
+    var zoneW by remember { mutableFloatStateOf(0.60f) }
+    var zoneH by remember { mutableFloatStateOf(0.50f) }
+
+    // CameraX and Analyzer handles
+    val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
+    val analyzer = remember {
+        PersonDetectorAnalyzer(
+            confidenceThreshold = confidenceThreshold,
+            zoneX = zoneX,
+            zoneY = zoneY,
+            zoneW = zoneW,
+            zoneH = zoneH,
+            cooldownMs = 15000L,
+            onFrameAnalyzed = { persons, isAlarm, inZoneCount ->
+                detectedPersons = persons
+                intrusionAlarmActive = isAlarm
+                intrudersInZoneCount = inZoneCount
+            },
+            onIntrusionConfirmed = { peopleCount, confidence, zoneId ->
+                // AUTOMATIC DETECTION DISPATCH
+                val timestamp = Instant.now().toString()
+                lastAlertTimestamp = System.currentTimeMillis()
+                lastEventMessage = "Automatic intrusion detected: $peopleCount person(s) at ${(confidence * 100).toInt()}% conf"
+
+                // 1. Post notification via NotificationHelper
+                NotificationHelper.showIntrusionAlert(
+                    context = context,
+                    confidence = confidence,
+                    zone = "Restricted Industrial Zone"
+                )
+
+                // 2. Report asynchronously to FastAPI /api/ai/events with source="android_camera"
+                CoroutineScope(Dispatchers.IO).launch {
+                    val result = repository.reportAiIntrusionEvent(
+                        polygonId = zoneId,
+                        peopleCount = peopleCount,
+                        confidence = confidence,
+                        source = "android_camera",
+                        isHardware = false,
+                        timestamp = timestamp
+                    )
+                    result.onSuccess {
+                        Log.i(TAG, "Successfully reported real camera intrusion event to backend")
+                    }.onFailure { err ->
+                        Log.e(TAG, "Error posting AI intrusion event: ${err.message}")
+                    }
+                }
+
+                // 3. Notify parent composable to update in-app incident audit state
+                onIntrusionDetected(confidence, "Restricted Industrial Zone")
+            }
         )
+    }
+
+    // Keep analyzer config in sync with UI states
+    LaunchedEffect(isMonitoringActive) {
+        analyzer.isMonitoringActive = isMonitoringActive
+    }
+    LaunchedEffect(zoneX, zoneY, zoneW, zoneH) {
+        analyzer.updateRestrictedZone(zoneX, zoneY, zoneW, zoneH)
+    }
+    LaunchedEffect(confidenceThreshold) {
+        analyzer.confidenceThreshold = confidenceThreshold
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            analyzer.close()
+            cameraExecutor.shutdown()
+        }
     }
 
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(Color(0xFF0F172A))
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+            .padding(14.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Header
+        // 1. Header with Status Chip
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -99,41 +194,87 @@ fun CameraVisionScreen(
                     color = Color.White
                 )
                 Text(
-                    text = "Perimeter intrusion detection via on-device ML Kit",
+                    text = "Continuous automated perimeter monitoring",
                     fontSize = 12.sp,
                     color = Color(0xFF94A3B8)
                 )
             }
 
-            // Status chip
             Surface(
-                color = if (isMonitoringActive) {
-                    if (intrusionAlarmActive) Color(0xFFEF4444) else Color(0xFF10B981)
-                } else Color(0xFF334155),
+                color = when {
+                    !isMonitoringActive -> Color(0xFF334155)
+                    intrusionAlarmActive -> Color(0xFFEF4444)
+                    else -> Color(0xFF10B981)
+                },
                 shape = RoundedCornerShape(16.dp)
             ) {
                 Text(
-                    text = if (isMonitoringActive) {
-                        if (intrusionAlarmActive) "INTRUSION DETECTED" else "ARMED & MONITORING"
-                    } else "DISARMED",
+                    text = when {
+                        !isMonitoringActive -> "DISARMED"
+                        intrusionAlarmActive -> "INTRUSION DETECTED"
+                        else -> "ARMED & SECURE"
+                    },
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                 )
             }
         }
 
-        // Camera Feed / Canvas Preview Area
+        // 2. Alarm Banner (Appears automatically during confirmed intrusion)
+        AnimatedVisibility(
+            visible = intrusionAlarmActive && isMonitoringActive,
+            enter = fadeIn(),
+            exit = fadeOut()
+        ) {
+            Surface(
+                color = Color(0xFFB91C1C),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = "Alert",
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Column {
+                        Text(
+                            text = "CRITICAL: UNAUTHORIZED PERSON IN RESTRICTED PERIMETER",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        )
+                        Text(
+                            text = "$intrudersInZoneCount person(s) inside boundary. Event dispatched to backend & system notification posted.",
+                            color = Color(0xFFFECACA),
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+            }
+        }
+
+        // 3. Live Camera Viewport with PreviewView and Canvas Overlay
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f)
+                .height(340.dp)
                 .background(Color(0xFF020617), shape = RoundedCornerShape(12.dp))
-                .border(1.dp, if (intrusionAlarmActive) Color(0xFFEF4444) else Color(0xFF1E293B), RoundedCornerShape(12.dp))
+                .border(
+                    width = if (intrusionAlarmActive) 2.5.dp else 1.dp,
+                    color = if (intrusionAlarmActive) Color(0xFFEF4444) else Color(0xFF1E293B),
+                    shape = RoundedCornerShape(12.dp)
+                )
         ) {
             if (!hasCameraPermission) {
-                // Permission Request Box
+                // Permission Request Fallback
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
@@ -156,7 +297,7 @@ fun CameraVisionScreen(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "SafePlant requires optical access to monitor restricted industrial plant perimeters using on-device neural processing.",
+                        text = "SafePlant requires camera access for continuous on-device person detection and restricted zone perimeter enforcement.",
                         fontSize = 12.sp,
                         color = Color(0xFF94A3B8),
                         lineHeight = 16.sp
@@ -167,32 +308,73 @@ fun CameraVisionScreen(
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
                         shape = RoundedCornerShape(8.dp)
                     ) {
-                        Text("Grant Permission", color = Color(0xFF0F172A), fontWeight = FontWeight.Bold)
+                        Text("Grant Camera Permission", color = Color(0xFF0F172A), fontWeight = FontWeight.Bold)
                     }
                 }
             } else {
-                // Live Viewport with Restricted Zone Overlay & Synthetic ML Detection Box
+                // Real CameraX PreviewView bound to camera lifecycle
+                AndroidView(
+                    factory = { ctx ->
+                        val previewView = PreviewView(ctx).apply {
+                            layoutParams = ViewGroup.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                ViewGroup.LayoutParams.MATCH_PARENT
+                            )
+                            scaleType = PreviewView.ScaleType.FILL_CENTER
+                            implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+                        }
+
+                        val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
+                        cameraProviderFuture.addListener({
+                            val cameraProvider = cameraProviderFuture.get()
+                            val preview = Preview.Builder().build().also {
+                                it.setSurfaceProvider(previewView.surfaceProvider)
+                            }
+
+                            val imageAnalysis = ImageAnalysis.Builder()
+                                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                                .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
+                                .build()
+                                .also {
+                                    it.setAnalyzer(cameraExecutor, analyzer)
+                                }
+
+                            try {
+                                cameraProvider.unbindAll()
+                                cameraProvider.bindToLifecycle(
+                                    lifecycleOwner,
+                                    CameraSelector.DEFAULT_BACK_CAMERA,
+                                    preview,
+                                    imageAnalysis
+                                )
+                            } catch (e: Exception) {
+                                Log.e(TAG, "CameraX binding failed: ${e.message}", e)
+                            }
+                        }, ContextCompat.getMainExecutor(ctx))
+
+                        previewView
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+
+                // Overlay Canvas: Restricted Zone Rectangle & Detected Person Bounding Boxes
                 Canvas(
                     modifier = Modifier
                         .fillMaxSize()
                         .pointerInput(Unit) {
                             detectTapGestures { offset ->
-                                // Allow user to tap to reposition center of restricted zone
+                                // Tap to reposition center of restricted zone
                                 val normX = offset.x / size.width
                                 val normY = offset.y / size.height
-                                restrictedZone = Rect(
-                                    left = (normX - 0.25f).coerceIn(0.05f, 0.45f),
-                                    top = (normY - 0.25f).coerceIn(0.05f, 0.45f),
-                                    right = (normX + 0.25f).coerceIn(0.55f, 0.95f),
-                                    bottom = (normY + 0.25f).coerceIn(0.55f, 0.95f)
-                                )
+                                zoneX = (normX - zoneW / 2f).coerceIn(0.05f, 1f - zoneW - 0.05f)
+                                zoneY = (normY - zoneH / 2f).coerceIn(0.05f, 1f - zoneH - 0.05f)
                             }
                         }
                 ) {
                     val w = size.width
                     val h = size.height
 
-                    // Draw grid reticle
+                    // 1. Draw Reticle Grid
                     drawLine(
                         color = Color(0x2210B981),
                         start = Offset(0f, h / 2),
@@ -206,100 +388,141 @@ fun CameraVisionScreen(
                         strokeWidth = 1f
                     )
 
-                    // Draw Restricted Zone Box
-                    val rLeft = restrictedZone.left * w
-                    val rTop = restrictedZone.top * h
-                    val rWidth = (restrictedZone.right - restrictedZone.left) * w
-                    val rHeight = (restrictedZone.bottom - restrictedZone.top) * h
+                    // 2. Draw Restricted Zone Rectangle
+                    val rLeft = zoneX * w
+                    val rTop = zoneY * h
+                    val rWidth = zoneW * w
+                    val rHeight = zoneH * h
+
+                    val zoneBgColor = if (intrusionAlarmActive) Color(0x44EF4444) else Color(0x22F59E0B)
+                    val zoneStrokeColor = if (intrusionAlarmActive) Color(0xFFEF4444) else Color(0xFFF59E0B)
 
                     drawRect(
-                        color = if (intrusionAlarmActive) Color(0x44EF4444) else Color(0x22F59E0B),
+                        color = zoneBgColor,
                         topLeft = Offset(rLeft, rTop),
                         size = Size(rWidth, rHeight)
                     )
                     drawRect(
-                        color = if (intrusionAlarmActive) Color(0xFFEF4444) else Color(0xFFF59E0B),
+                        color = zoneStrokeColor,
                         topLeft = Offset(rLeft, rTop),
                         size = Size(rWidth, rHeight),
-                        style = Stroke(width = 2.dp.toPx())
+                        style = Stroke(
+                            width = 2.5.dp.toPx(),
+                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(15f, 10f), 0f)
+                        )
                     )
 
-                    // If monitoring and simulated person detected:
-                    if (isMonitoringActive && detectedPersonsCount > 0) {
-                        val pLeft = 0.35f * w
-                        val pTop = 0.30f * h
-                        val pW = 0.22f * w
-                        val pH = 0.40f * h
+                    // 3. Draw Detected Person Bounding Boxes
+                    if (isMonitoringActive) {
+                        for (person in detectedPersons) {
+                            val pLeft = person.boundingBox.left * w
+                            val pTop = person.boundingBox.top * h
+                            val pWidth = (person.boundingBox.right - person.boundingBox.left) * w
+                            val pHeight = (person.boundingBox.bottom - person.boundingBox.top) * h
 
-                        drawRect(
-                            color = Color(0xFFEF4444),
-                            topLeft = Offset(pLeft, pTop),
-                            size = Size(pW, pH),
-                            style = Stroke(width = 2.5f.dp.toPx())
-                        )
+                            val boxColor = if (person.isInRestrictedZone) Color(0xFFEF4444) else Color(0xFF10B981)
+
+                            // Bounding Box
+                            drawRect(
+                                color = boxColor,
+                                topLeft = Offset(pLeft, pTop),
+                                size = Size(pWidth, pHeight),
+                                style = Stroke(width = 2.5.dp.toPx())
+                            )
+
+                            // Corner highlight accents
+                            val cornerLen = 14f
+                            // Top-left
+                            drawLine(boxColor, Offset(pLeft, pTop), Offset(pLeft + cornerLen, pTop), strokeWidth = 4f)
+                            drawLine(boxColor, Offset(pLeft, pTop), Offset(pLeft, pTop + cornerLen), strokeWidth = 4f)
+                            // Top-right
+                            drawLine(boxColor, Offset(pLeft + pWidth, pTop), Offset(pLeft + pWidth - cornerLen, pTop), strokeWidth = 4f)
+                            drawLine(boxColor, Offset(pLeft + pWidth, pTop), Offset(pLeft + pWidth, pTop + cornerLen), strokeWidth = 4f)
+                        }
                     }
                 }
 
-                // HUD Overlay elements
+                // HUD Overlay Stats & Labels
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(12.dp),
+                        .padding(10.dp),
                     verticalArrangement = Arrangement.SpaceBetween
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(
-                            text = "FPS: 28.4 | ML Latency: 34ms",
-                            fontSize = 11.sp,
-                            fontFamily = FontFamily.Monospace,
-                            color = Color(0xFF10B981)
-                        )
-                        Text(
-                            text = "RESTRICTED BOUNDARY: ACTIVE",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFFF59E0B)
-                        )
-                    }
-
-                    if (intrusionAlarmActive) {
                         Surface(
-                            color = Color(0xFFB91C1C),
-                            shape = RoundedCornerShape(6.dp),
-                            modifier = Modifier.align(Alignment.CenterHorizontally)
+                            color = Color(0xAA020617),
+                            shape = RoundedCornerShape(4.dp)
                         ) {
                             Text(
-                                text = "CRITICAL: UNAUTHORIZED PERSON IN RESTRICTED PERIMETER",
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                text = "STREAM: ACTIVE | DETECTIONS: ${detectedPersons.size} (${intrudersInZoneCount} IN ZONE)",
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = if (intrudersInZoneCount > 0) Color(0xFFEF4444) else Color(0xFF10B981),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                            )
+                        }
+
+                        Surface(
+                            color = Color(0xAA020617),
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Text(
+                                text = "ZONE: [${(zoneX * 100).toInt()}%, ${(zoneY * 100).toInt()}%]",
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = Color(0xFFF59E0B),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
                             )
                         }
                     }
 
+                    // Detection badges
+                    if (isMonitoringActive && detectedPersons.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            detectedPersons.take(3).forEach { person ->
+                                Surface(
+                                    color = if (person.isInRestrictedZone) Color(0xFFDC2626) else Color(0xFF065F46),
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Text(
+                                        text = "${if (person.isInRestrictedZone) "INTRUDER" else "PERSON"}: ${(person.confidence * 100).toInt()}%",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     Text(
-                        text = "Tap preview area to center perimeter boundary.",
-                        fontSize = 11.sp,
-                        color = Color(0xFF64748B)
+                        text = "Tap camera feed to reposition restricted boundary center.",
+                        fontSize = 10.5.sp,
+                        color = Color(0xFF94A3B8)
                     )
                 }
             }
         }
 
-        // Action controls
+        // 4. Monitoring Controls & Calibration Card
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
             shape = RoundedCornerShape(12.dp)
         ) {
             Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                // Automatic Monitoring Toggle Switch
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -307,14 +530,14 @@ fun CameraVisionScreen(
                 ) {
                     Column {
                         Text(
-                            text = if (isMonitoringActive) "Edge Vision Active" else "Edge Vision Standby",
+                            text = if (isMonitoringActive) "Automated Detection Armed" else "Detection Standby",
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.White
                         )
                         Text(
-                            text = "15-second spam suppression cooldown enabled",
-                            fontSize = 12.sp,
+                            text = "Automatic entry detection (no tap/confirmation required)",
+                            fontSize = 11.5.sp,
                             color = Color(0xFF94A3B8)
                         )
                     }
@@ -323,18 +546,10 @@ fun CameraVisionScreen(
                         checked = isMonitoringActive,
                         onCheckedChange = { active ->
                             isMonitoringActive = active
-                            if (active) {
-                                // Simulate detection test event
-                                detectedPersonsCount = 1
-                                intrusionAlarmActive = true
-                                val now = System.currentTimeMillis()
-                                if (now - lastAlertTimestamp > alertCooldownMs) {
-                                    lastAlertTimestamp = now
-                                    onIntrusionDetected(0.92f, "High-Voltage Relay Zone")
-                                }
-                            } else {
-                                detectedPersonsCount = 0
+                            if (!active) {
+                                detectedPersons = emptyList()
                                 intrusionAlarmActive = false
+                                intrudersInZoneCount = 0
                             }
                         },
                         colors = SwitchDefaults.colors(
@@ -344,18 +559,106 @@ fun CameraVisionScreen(
                     )
                 }
 
-                // Disclaimer box
+                HorizontalDivider(color = Color(0xFF334155))
+
+                // Confidence Threshold Slider
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "Confidence Threshold",
+                            fontSize = 12.sp,
+                            color = Color(0xFFE2E8F0)
+                        )
+                        Text(
+                            text = "${(confidenceThreshold * 100).toInt()}%",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF10B981)
+                        )
+                    }
+                    Slider(
+                        value = confidenceThreshold,
+                        onValueChange = { confidenceThreshold = it },
+                        valueRange = 0.40f..0.90f,
+                        steps = 9,
+                        colors = SliderDefaults.colors(
+                            thumbColor = Color(0xFF10B981),
+                            activeTrackColor = Color(0xFF10B981),
+                            inactiveTrackColor = Color(0xFF334155)
+                        )
+                    )
+                }
+
+                // Status message
+                Text(
+                    text = "Status: $lastEventMessage",
+                    fontSize = 11.sp,
+                    color = Color(0xFF94A3B8),
+                    fontFamily = FontFamily.Monospace
+                )
+
+                // 5. Separate Distinct Manual Test Intrusion Button
+                Button(
+                    onClick = {
+                        // MANUAL TEST ONLY: sends simulated_ui with is_hardware=false
+                        val timestamp = Instant.now().toString()
+                        val testConf = 0.94f
+                        lastAlertTimestamp = System.currentTimeMillis()
+                        lastEventMessage = "Simulated intrusion test triggered manually."
+
+                        NotificationHelper.showIntrusionAlert(
+                            context = context,
+                            confidence = testConf,
+                            zone = "Restricted Industrial Zone (Test)"
+                        )
+
+                        CoroutineScope(Dispatchers.IO).launch {
+                            repository.reportAiIntrusionEvent(
+                                polygonId = "zone_perimeter_test",
+                                peopleCount = 1,
+                                confidence = testConf,
+                                source = "simulated_ui",
+                                isHardware = false,
+                                timestamp = timestamp
+                            )
+                        }
+
+                        onIntrusionDetected(testConf, "Restricted Industrial Zone (Test)")
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334155))
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.BugReport,
+                        contentDescription = "Test",
+                        tint = Color(0xFF94A3B8),
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "TRIGGER TEST INTRUSION (SIMULATED)",
+                        color = Color(0xFFE2E8F0),
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                // Disclaimer
                 Surface(
                     color = Color(0xFF0F172A),
-                    shape = RoundedCornerShape(8.dp),
+                    shape = RoundedCornerShape(6.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = "Integrity Note: SafePlant uses ML Kit on-device person detection to detect human silhouettes and posture. It does not perform biometric facial recognition or identify individuals.",
-                        fontSize = 11.sp,
-                        color = Color(0xFF94A3B8),
-                        modifier = Modifier.padding(10.dp),
-                        lineHeight = 15.sp
+                        text = "Real intrusions trigger automatically without clicking. Spam prevention enforces a 15-second cooldown and 3-frame confirmation window. Re-arms when zone is clear.",
+                        fontSize = 10.5.sp,
+                        color = Color(0xFF64748B),
+                        modifier = Modifier.padding(8.dp),
+                        lineHeight = 14.sp
                     )
                 }
             }

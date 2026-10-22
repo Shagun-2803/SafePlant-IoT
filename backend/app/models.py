@@ -140,6 +140,8 @@ class AiEventPayload(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     timestamp: Optional[str] = None
     idempotency_key: Optional[str] = None
+    source: Optional[str] = "android_camera"
+    is_hardware: Optional[bool] = False
 
 class FcmTokenRegistrationPayload(BaseModel):
     token: str
